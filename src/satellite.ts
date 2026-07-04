@@ -25,6 +25,11 @@ import type { SatelliteHost, Logger } from './index';
 /** 1280 samples (80 ms) of 16 kHz mono 16-bit PCM per processing frame. */
 const FRAME_BYTES = 1280 * 2;
 const FRAME_MS = 80;
+/** Missed heartbeat ACKs before the satellite assumes the adapter is gone and re-registers. */
+const MAX_HEARTBEAT_MISSES = 3;
+const RECONNECT_MAX_BACKOFF_MS = 30_000;
+
+const sleep = (ms: number): Promise<void> => new Promise(res => setTimeout(res, ms));
 
 export class Satellite {
     private readonly log: Logger;
@@ -59,6 +64,10 @@ export class Satellite {
     private ttsDiscard = false;
 
     private registerResolve: (() => void) | null = null;
+    private running = false;
+    private heartbeatMisses = 0;
+    private awaitingHeartbeatAck = false;
+    private reconnecting = false;
 
     constructor(
         private readonly cfg: SatelliteConfig,
@@ -68,23 +77,22 @@ export class Satellite {
     }
 
     async start(): Promise<void> {
+        this.running = true;
         const addr = await this.resolveAddress();
         this.serverHost = addr.host;
         this.serverPort = addr.port;
         this.log.info(`Adapter address: ${this.serverHost}:${this.serverPort}`);
 
-        this.openSocket();
+        await this.openSocket();
 
         const models = await ensureModels(this.cfg.modelsDir, this.cfg.wakewordModel, this.log);
         this.wakeword = new WakeWord(models, this.cfg.wakewordThreshold, this.log);
         await this.wakeword.load();
         this.plingPcm = pling();
 
-        await this.register();
-        this.heartbeatTimer = setInterval(
-            () => this.sendControl({ type: 'heartbeat', device: this.cfg.device }),
-            this.cfg.heartbeatIntervalMs,
-        );
+        // Retry until the adapter answers, so the satellite survives the adapter being down at boot.
+        await this.registerWithRetry();
+        this.heartbeatTimer = setInterval(() => this.heartbeatTick(), this.cfg.heartbeatIntervalMs);
 
         this.mic = new Mic(this.cfg.micDevice, this.log);
         this.mic.start(d => this.onMicData(d));
@@ -93,6 +101,7 @@ export class Satellite {
     }
 
     async stop(): Promise<void> {
+        this.running = false;
         if (this.heartbeatTimer) {
             clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = null;
@@ -118,12 +127,68 @@ export class Satellite {
         throw new Error('No adapter address: set "host" (fixed) or "mqttBroker" (discovery) in the config.');
     }
 
-    private openSocket(): void {
-        const socket = dgram.createSocket('udp4');
-        this.socket = socket;
-        socket.on('message', d => this.onMessage(d));
-        socket.on('error', e => this.log.error(`UDP error: ${e.message}`));
-        socket.bind(this.cfg.listenPort, () => this.log.info(`Listening for TTS on UDP ${this.cfg.listenPort}.`));
+    private openSocket(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const socket = dgram.createSocket('udp4');
+            this.socket = socket;
+            socket.on('message', d => this.onMessage(d));
+            socket.on('error', e => this.log.error(`UDP error: ${e.message}`));
+            socket.once('error', reject);
+            socket.bind(this.cfg.listenPort, () => {
+                this.log.info(`Listening for TTS on UDP ${this.cfg.listenPort}.`);
+                resolve();
+            });
+        });
+    }
+
+    /** Register, retrying with exponential backoff until the adapter acknowledges (or we stop). */
+    private async registerWithRetry(): Promise<void> {
+        let backoff = 1000;
+        while (this.running) {
+            try {
+                await this.register();
+                this.awaitingHeartbeatAck = false;
+                this.heartbeatMisses = 0;
+                return;
+            } catch (e) {
+                this.log.warn(`${(e as Error).message} — retrying in ${Math.round(backoff / 1000)} s …`);
+                await sleep(backoff);
+                backoff = Math.min(backoff * 2, RECONNECT_MAX_BACKOFF_MS);
+            }
+        }
+    }
+
+    /** Triggered when heartbeats stop being acknowledged: re-register (adapter probably restarted). */
+    private async reconnect(): Promise<void> {
+        if (this.reconnecting || !this.running) {
+            return;
+        }
+        this.reconnecting = true;
+        this.heartbeatMisses = 0;
+        this.awaitingHeartbeatAck = false;
+        this.log.warn('Adapter unreachable — re-registering …');
+        try {
+            await this.registerWithRetry();
+            this.log.info('Re-registered with the adapter.');
+        } finally {
+            this.reconnecting = false;
+        }
+    }
+
+    private heartbeatTick(): void {
+        if (this.reconnecting) {
+            return;
+        }
+        if (this.awaitingHeartbeatAck) {
+            this.heartbeatMisses++;
+            this.log.warn(`Heartbeat not acknowledged (${this.heartbeatMisses}/${MAX_HEARTBEAT_MISSES}).`);
+            if (this.heartbeatMisses >= MAX_HEARTBEAT_MISSES) {
+                void this.reconnect();
+                return;
+            }
+        }
+        this.awaitingHeartbeatAck = true;
+        this.sendControl({ type: 'heartbeat', device: this.cfg.device });
     }
 
     private register(): Promise<void> {
@@ -301,7 +366,10 @@ export class Satellite {
             case 'tts_end':
                 void this.playTts(msg.sample_rate || AUDIO_SAMPLE_RATE);
                 break;
-            // 'heartbeat_ack' — nothing to do
+            case 'heartbeat_ack':
+                this.awaitingHeartbeatAck = false;
+                this.heartbeatMisses = 0;
+                break;
         }
     }
 
