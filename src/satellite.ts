@@ -14,7 +14,7 @@ import {
     type SatToServer,
     type SatelliteState,
 } from './protocol';
-import { Mic, playPcm, pling } from './audio';
+import { Mic, playPcm, pling, resolveBackend, type AudioBackend } from './audio';
 import { SilenceDetector, rms } from './vad';
 import { WakeWord } from './wakeword';
 import { ensureModels } from './models';
@@ -39,6 +39,7 @@ export class Satellite {
 
     private wakeword!: WakeWord;
     private mic: Mic | null = null;
+    private readonly backend: AudioBackend;
     private plingPcm: Buffer = Buffer.alloc(0);
     private heartbeatTimer: NodeJS.Timeout | null = null;
 
@@ -74,6 +75,7 @@ export class Satellite {
         private readonly host: SatelliteHost,
     ) {
         this.log = host.log;
+        this.backend = resolveBackend(cfg.audioBackend);
     }
 
     async start(): Promise<void> {
@@ -94,7 +96,7 @@ export class Satellite {
         await this.registerWithRetry();
         this.heartbeatTimer = setInterval(() => this.heartbeatTick(), this.cfg.heartbeatIntervalMs);
 
-        this.mic = new Mic(this.cfg.micDevice, this.log);
+        this.mic = new Mic(this.backend, this.cfg.micDevice, this.log);
         this.mic.start(d => this.onMicData(d));
         this.setStatus('idle');
         this.log.info(`Satellite '${this.cfg.device}' ready. Listening for the wake word …`);
@@ -289,7 +291,7 @@ export class Satellite {
     private async startRecording(): Promise<void> {
         this.setStatus('listening');
         this.ttsDiscard = true; // drop any late TTS from a previous turn
-        await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.cfg.speakerDevice, this.log);
+        await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.log);
         this.ttsDiscard = false;
         this.ttsChunks = [];
 
@@ -380,7 +382,7 @@ export class Satellite {
             return;
         }
         this.log.info(`Playing reply (${(pcm.length / 2 / sampleRate).toFixed(1)} s @ ${sampleRate} Hz).`);
-        await playPcm(pcm, sampleRate, this.cfg.speakerDevice, this.log);
+        await playPcm(pcm, sampleRate, this.backend, this.cfg.speakerDevice, this.log);
     }
 
     // ── senders / status ───────────────────────────────────────────────────

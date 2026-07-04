@@ -6,6 +6,7 @@
     "port": 7775,
     "listenPort": 7776,
 
+    "audioBackend": "auto",
     "micDevice": "plughw:2,0",
     "speakerDevice": "plughw:2,0",
 

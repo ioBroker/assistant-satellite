@@ -10,8 +10,13 @@ runs on a bare Raspberry Pi via `npx`.
 ## Requirements
 
 - Node.js ≥ 18
-- Linux with ALSA tools: `sudo apt install alsa-utils` (provides `arecord`/`aplay`)
+- Audio backend (auto-selected by platform):
+  - **Linux**: ALSA tools — `sudo apt install alsa-utils` (`arecord`/`aplay`)
+  - **Windows / macOS**: **ffmpeg** (provides `ffmpeg`/`ffplay`) on the PATH
 - A running `ioBroker.assistant` instance with the **Voice** server enabled
+
+Wake-word inference uses `onnxruntime-node`, which ships prebuilt binaries for Linux (x64/arm64),
+Windows (x64) and macOS (x64/arm64) — so the satellite runs on all three; only the audio backend differs.
 
 ## Quick start
 
@@ -40,29 +45,68 @@ lets ALSA resample so 16 kHz capture works on any card).
 | `host` / `port`                  | `` / `7775`      | adapter address (fixed → **no MQTT broker needed**) |
 | `listenPort`                     | `7776`           | UDP port the satellite receives TTS on              |
 | `mqttBroker` …                   | ``               | optional discovery instead of a fixed `host`        |
-| `micDevice` / `speakerDevice`    | `default`        | ALSA devices, e.g. `plughw:2,0`                     |
+| `audioBackend`                   | `auto`           | `auto` / `alsa` / `ffmpeg`                           |
+| `micDevice` / `speakerDevice`    | `default`        | see per-platform notes below                        |
 | `wakewordModel`                  | `hey_jarvis`     | built-in name, URL, or local `.onnx` path           |
-| `wakewordThreshold`              | `0.5`            | detection sensitivity (0–1)                         |
+| `wakewordThreshold`              | `0.5`            | detection sensitivity (0–1)                          |
 | `silenceThreshold` / `silenceMs` | `300` / `800`    | end-of-speech (VAD)                                 |
 | `minRecordMs` / `maxRecordMs`    | `800` / `8000`   | recording bounds                                    |
 
 Built-in wake words: `hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`.
 
+### Audio devices per platform
+
+- **Linux (alsa):** `micDevice`/`speakerDevice` = ALSA names, e.g. `plughw:2,0`. List with `arecord -l` /
+  `aplay -l` (the `plug` prefix lets ALSA resample so 16 kHz capture works on any card).
+- **Windows (ffmpeg):** `micDevice` = the DirectShow device **name**, e.g. `Microphone (Poly Sync 20)`.
+  List with `ffmpeg -hide_banner -list_devices true -f dshow -i dummy`. Playback uses the default output
+  (`speakerDevice` is ignored via ffplay).
+- **macOS (ffmpeg):** `micDevice` = the avfoundation audio **index**, e.g. `0`. List with
+  `ffmpeg -hide_banner -f avfoundation -list_devices true -i ""`.
+
 ## Run as a service (systemd)
+
+The satellite already retries registration and re-registers automatically if the adapter restarts, so
+`systemd` only needs to keep the process alive.
+
+Running from a local clone/build (before publishing to npm):
 
 ```ini
 [Unit]
 Description=ioBroker assistant satellite
 After=network-online.target sound.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/npx @iobroker/assistant-satellite /etc/assistant-satellite/config.json
-Restart=on-failure
-User=pi
+WorkingDirectory=/opt/assistant-satellite
+ExecStart=/usr/bin/node /opt/assistant-satellite/build/cli.js /opt/assistant-satellite/config.json
+Restart=always
+RestartSec=5
+User=iob
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+After publishing (below) you can instead use `ExecStart=/usr/bin/npx @iobroker/assistant-satellite <config>`.
+
+```bash
+sudo cp assistant-satellite.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now assistant-satellite
+journalctl -u assistant-satellite -f    # watch the logs
+```
+
+## Publishing to npm
+
+```bash
+npm run build          # compile to build/
+npm login              # once, with an account that can publish under @iobroker
+npm publish --access public
+```
+
+Then anyone can run it with `npx @iobroker/assistant-satellite`. `prepublishOnly` rebuilds automatically,
+and only `build/`, `config.example.json`, `README.md` and `LICENSE` are shipped (see `files`).
 
 ## Status
 

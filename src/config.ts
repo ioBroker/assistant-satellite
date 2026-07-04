@@ -18,7 +18,12 @@ export interface SatelliteConfig {
     discoveryTopic: string;
     discoveryTimeoutMs: number;
 
-    /** ALSA capture/playback devices (e.g. "plughw:2,0"; "default" or "" for the system default). */
+    /** Audio backend: 'auto' (alsa on Linux, ffmpeg elsewhere), or force 'alsa' / 'ffmpeg'. */
+    audioBackend: 'auto' | 'alsa' | 'ffmpeg';
+    /**
+     * Capture/playback devices. ALSA: e.g. "plughw:2,0". ffmpeg mic: dshow device name (Windows),
+     * avfoundation index (macOS). "default" or "" = system default.
+     */
     micDevice: string;
     speakerDevice: string;
 
@@ -53,6 +58,7 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
     mqttPass: '',
     discoveryTopic: 'hannah/server',
     discoveryTimeoutMs: 5000,
+    audioBackend: 'auto',
     micDevice: 'default',
     speakerDevice: 'default',
     wakewordModel: '',
