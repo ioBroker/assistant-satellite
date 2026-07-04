@@ -39,19 +39,19 @@ lets ALSA resample so 16 kHz capture works on any card).
 
 ## Configuration (`config.json`)
 
-| Key                              | Default          | Meaning                                             |
-|----------------------------------|------------------|-----------------------------------------------------|
-| `logLevel`                       | `info`           | `info` or `debug` (wake-word/mic diagnostics)       |
-| `device` / `room`                | `satellite` / `` | identity reported to the adapter                    |
-| `host` / `port`                  | `` / `7775`      | adapter address (fixed → **no MQTT broker needed**) |
-| `listenPort`                     | `7776`           | UDP port the satellite receives TTS on              |
-| `mqttBroker` …                   | ``               | optional discovery instead of a fixed `host`        |
+| Key                              | Default          | Meaning                                              |
+|----------------------------------|------------------|------------------------------------------------------|
+| `logLevel`                       | `info`           | `info` or `debug` (wake-word/mic diagnostics)        |
+| `device` / `room`                | `satellite` / `` | identity reported to the adapter                     |
+| `host` / `port`                  | `` / `7775`      | adapter address (fixed → **no MQTT broker needed**)  |
+| `listenPort`                     | `7776`           | UDP port the satellite receives TTS on               |
+| `mqttBroker` …                   | ``               | optional discovery instead of a fixed `host`         |
 | `audioBackend`                   | `auto`           | `auto` / `alsa` / `ffmpeg`                           |
-| `micDevice` / `speakerDevice`    | `default`        | see per-platform notes below                        |
-| `wakewordModel`                  | `hey_jarvis`     | built-in name, URL, or local `.onnx` path           |
+| `micDevice` / `speakerDevice`    | `default`        | see per-platform notes below                         |
+| `wakewordModel`                  | `hey_jarvis`     | built-in name, URL, or local `.onnx` path            |
 | `wakewordThreshold`              | `0.5`            | detection sensitivity (0–1)                          |
-| `silenceThreshold` / `silenceMs` | `300` / `800`    | end-of-speech (VAD)                                 |
-| `minRecordMs` / `maxRecordMs`    | `800` / `8000`   | recording bounds                                    |
+| `silenceThreshold` / `silenceMs` | `300` / `800`    | end-of-speech (VAD)                                  |
+| `minRecordMs` / `maxRecordMs`    | `800` / `8000`   | recording bounds                                     |
 
 Built-in wake words: `hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`.
 
@@ -68,9 +68,27 @@ Built-in wake words: `hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`.
 ## Run as a service (systemd)
 
 The satellite already retries registration and re-registers automatically if the adapter restarts, so
-`systemd` only needs to keep the process alive.
+`systemd` only needs to keep the process alive. It can install itself (Linux, needs `sudo`):
 
-Running from a local clone/build (before publishing to npm):
+```bash
+# from a clone (build first), pointing at your config:
+npm run build
+sudo node build/cli.js install config.json
+# …or, after `npm i -g @iobroker/assistant-satellite`:
+sudo assistant-satellite install /path/to/config.json
+```
+
+`install` writes `/etc/systemd/system/assistant-satellite.service` (running as **your** user, in the
+`audio` group, with absolute paths to `node`, `cli.js` and the config), then `daemon-reload` +
+`enable --now`. Manage it with:
+
+```bash
+journalctl -u assistant-satellite -f          # logs
+sudo systemctl restart assistant-satellite
+sudo node build/cli.js uninstall              # stop + remove  (or: sudo assistant-satellite uninstall)
+```
+
+<details><summary>Prefer a hand-written unit file?</summary>
 
 ```ini
 [Unit]
@@ -84,30 +102,12 @@ ExecStart=/usr/bin/node /opt/assistant-satellite/build/cli.js /opt/assistant-sat
 Restart=always
 RestartSec=5
 User=iob
+SupplementaryGroups=audio
 
 [Install]
 WantedBy=multi-user.target
 ```
-
-After publishing (below) you can instead use `ExecStart=/usr/bin/npx @iobroker/assistant-satellite <config>`.
-
-```bash
-sudo cp assistant-satellite.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now assistant-satellite
-journalctl -u assistant-satellite -f    # watch the logs
-```
-
-## Publishing to npm
-
-```bash
-npm run build          # compile to build/
-npm login              # once, with an account that can publish under @iobroker
-npm publish --access public
-```
-
-Then anyone can run it with `npx @iobroker/assistant-satellite`. `prepublishOnly` rebuilds automatically,
-and only `build/`, `config.example.json`, `README.md` and `LICENSE` are shipped (see `files`).
+</details>
 
 ## Status
 

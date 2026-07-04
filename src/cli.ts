@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 /**
- * CLI entry point: `npx @iobroker/assistant-satellite [config.json]`.
- * Reads a config file (writes a default one on first run), then runs the satellite.
+ * CLI entry point:
+ *   assistant-satellite [config.json]           run the satellite
+ *   assistant-satellite install [config.json]   install + start a systemd service (Linux, needs sudo)
+ *   assistant-satellite uninstall               stop + remove the systemd service (needs sudo)
  */
 import * as fs from 'node:fs';
 import { Satellite, loadConfig, DEFAULT_CONFIG, type SatelliteConfig } from './index';
+import { installService, uninstallService } from './service';
 
 // Debug is off until we know the config's logLevel; the DEBUG env var forces it on regardless.
 let debugEnabled = !!process.env.DEBUG;
@@ -19,7 +22,29 @@ const log = {
     },
 };
 
-const configPath = process.argv[2] || 'config.json';
+const [command, ...rest] = process.argv.slice(2);
+
+// Service management subcommands (Linux/systemd).
+if (command === 'install' || command === '--install') {
+    try {
+        installService(rest[0] || 'config.json', log);
+        process.exit(0);
+    } catch (e) {
+        log.error((e as Error).message);
+        process.exit(1);
+    }
+}
+if (command === 'uninstall' || command === '--uninstall') {
+    try {
+        uninstallService(log);
+        process.exit(0);
+    } catch (e) {
+        log.error((e as Error).message);
+        process.exit(1);
+    }
+}
+
+const configPath = command || 'config.json';
 
 if (!fs.existsSync(configPath)) {
     fs.writeFileSync(configPath, `${JSON.stringify(DEFAULT_CONFIG, null, 4)}\n`);
