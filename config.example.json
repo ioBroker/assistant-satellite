@@ -1,0 +1,21 @@
+{
+    "device": "wohnzimmer",
+    "room": "Wohnzimmer",
+
+    "host": "192.168.1.129",
+    "port": 7775,
+    "listenPort": 7776,
+
+    "micDevice": "plughw:2,0",
+    "speakerDevice": "plughw:2,0",
+
+    "wakewordModel": "hey_jarvis",
+    "wakewordThreshold": 0.5,
+    "modelsDir": "models",
+
+    "silenceThreshold": 300,
+    "silenceMs": 800,
+    "minRecordMs": 800,
+    "maxRecordMs": 8000,
+    "preBufferChunks": 5
+}
