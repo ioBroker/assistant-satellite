@@ -51,6 +51,8 @@ export class Satellite {
     private recording = false;
     private silence: SilenceDetector | null = null;
     private preBuffer: Buffer[] = [];
+    private recFrames = 0;
+    private recPeakRms = 0;
 
     // tts receiver
     private ttsChunks: Buffer[] = [];
@@ -174,6 +176,11 @@ export class Satellite {
     private async handleFrame(frame: Buffer): Promise<void> {
         if (this.recording) {
             this.sendAudio(frame);
+            this.recFrames++;
+            const level = rms(frame);
+            if (level > this.recPeakRms) {
+                this.recPeakRms = level;
+            }
             if (this.silence!.push(frame)) {
                 this.endRecording();
             }
@@ -221,6 +228,13 @@ export class Satellite {
         this.ttsDiscard = false;
         this.ttsChunks = [];
 
+        // Drop everything captured up to now (the beep echo + any inference backlog) so recording runs
+        // in real time — otherwise the silence detector races through buffered quiet frames and ends the
+        // utterance before you finish speaking (→ the adapter's STT gets silence → "(empty)").
+        this.micRemainder = Buffer.alloc(0);
+        this.preBuffer = [];
+        this.recFrames = 0;
+        this.recPeakRms = 0;
         this.silence = new SilenceDetector(
             this.cfg.silenceThreshold,
             Math.round(this.cfg.silenceMs / FRAME_MS),
@@ -228,17 +242,19 @@ export class Satellite {
             Math.round(this.cfg.maxRecordMs / FRAME_MS),
         );
         this.recording = true;
-        for (const f of this.preBuffer) {
-            this.sendAudio(f);
-        }
-        this.preBuffer = [];
+        this.log.info('Beep done — listening for your command …');
     }
 
     private endRecording(): void {
         this.recording = false;
         this.silence = null;
         this.sendControl({ type: 'audio_end', device: this.cfg.device });
-        this.log.info('Recording finished — waiting for the reply …');
+        const maxFrames = Math.round(this.cfg.maxRecordMs / FRAME_MS);
+        const reason = this.recFrames >= maxFrames ? 'max length' : 'silence';
+        this.log.info(
+            `Recording finished: ${this.recFrames} frames (${this.recFrames * FRAME_MS} ms), ` +
+                `peak RMS ${this.recPeakRms.toFixed(0)}, ended on ${reason} — audio_end sent.`,
+        );
     }
 
     // ── incoming UDP (control + TTS) ───────────────────────────────────────
