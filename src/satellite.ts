@@ -15,7 +15,7 @@ import {
     type SatelliteState,
 } from './protocol';
 import { Mic, playPcm, pling } from './audio';
-import { SilenceDetector } from './vad';
+import { SilenceDetector, rms } from './vad';
 import { WakeWord } from './wakeword';
 import { ensureModels } from './models';
 import { discoverServer } from './mqtt';
@@ -40,6 +40,12 @@ export class Satellite {
     // mic frame assembly
     private micRemainder: Buffer = Buffer.alloc(0);
     private pumping = false;
+    private micBytesLogged = false;
+
+    // wake-word diagnostics (periodic summary)
+    private wakeFrames = 0;
+    private wakeMaxScore = 0;
+    private wakeMaxRms = 0;
 
     // recording state
     private recording = false;
@@ -140,6 +146,10 @@ export class Satellite {
     // ── microphone → wake word → recording ─────────────────────────────────
 
     private onMicData(chunk: Buffer): void {
+        if (!this.micBytesLogged) {
+            this.micBytesLogged = true;
+            this.log.info(`Microphone is producing audio (first chunk ${chunk.length} bytes).`);
+        }
         this.micRemainder = Buffer.concat([this.micRemainder, chunk]);
         if (!this.pumping) {
             void this.pump();
@@ -176,6 +186,27 @@ export class Satellite {
             this.preBuffer.shift();
         }
         const score = await this.wakeword.process(frame);
+
+        // Periodic diagnostics: every ~2 s report how many frames ran and the peak score, so you can
+        // watch the score rise while saying the wake word and tune `wakewordThreshold`.
+        this.wakeFrames++;
+        if (score !== null && score > this.wakeMaxScore) {
+            this.wakeMaxScore = score;
+        }
+        const level = rms(frame);
+        if (level > this.wakeMaxRms) {
+            this.wakeMaxRms = level;
+        }
+        if (this.wakeFrames >= 25) {
+            this.log.info(
+                `wake: ${this.wakeFrames} frames, peak mic RMS ${this.wakeMaxRms.toFixed(0)}, ` +
+                    `peak score ${this.wakeMaxScore.toFixed(3)} (threshold ${this.cfg.wakewordThreshold})`,
+            );
+            this.wakeFrames = 0;
+            this.wakeMaxScore = 0;
+            this.wakeMaxRms = 0;
+        }
+
         if (this.wakeword.triggered(score)) {
             this.log.info(`Wake word detected (score ${(score as number).toFixed(3)}).`);
             this.wakeword.reset();

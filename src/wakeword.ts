@@ -30,6 +30,8 @@ export class WakeWord {
     private melBuffer: number[][] = []; // rows of 32 mel bins
     private melProcessed = 0; // mel frames already turned into embeddings
     private embBuffer: number[][] = []; // rows of 96 embedding dims
+    private melShapeLogged = false;
+    private embShapeLogged = false;
 
     constructor(
         private readonly models: ModelPaths,
@@ -42,6 +44,9 @@ export class WakeWord {
         this.embedding = await ort.InferenceSession.create(this.models.embedding);
         this.classifier = await ort.InferenceSession.create(this.models.wakeword);
         this.log.info('Wake-word models loaded.');
+        this.log.info(`  melspec   IO: in=[${this.melspec.inputNames}] out=[${this.melspec.outputNames}]`);
+        this.log.info(`  embedding IO: in=[${this.embedding.inputNames}] out=[${this.embedding.outputNames}]`);
+        this.log.info(`  classifier IO: in=[${this.classifier.inputNames}] out=[${this.classifier.outputNames}]`);
     }
 
     /** Reset the streaming buffers (call after a detection so it re-arms cleanly). */
@@ -80,6 +85,10 @@ export class WakeWord {
         const out = await this.melspec.run({ [inName]: new ort.Tensor('float32', audio, [1, n]) });
         const t = out[outName];
         const data = t.data as Float32Array;
+        if (!this.melShapeLogged) {
+            this.log.info(`melspec output dims for ${n} samples: [${t.dims.join(',')}] (expected [1,1,F,32])`);
+            this.melShapeLogged = true;
+        }
         // dims [1,1,F,32]
         const frames = Number(t.dims[2]);
         for (let f = 0; f < frames; f++) {
@@ -105,6 +114,10 @@ export class WakeWord {
             const out = await this.embedding.run({
                 [inName]: new ort.Tensor('float32', flat, [1, EMB_WINDOW, MEL_BINS, 1]),
             });
+            if (!this.embShapeLogged) {
+                this.log.info(`embedding output dims: [${out[outName].dims.join(',')}] (expected [1,1,1,96])`);
+                this.embShapeLogged = true;
+            }
             const emb = out[outName].data as Float32Array; // [1,1,1,96]
             this.embBuffer.push(Array.from(emb.slice(0, EMB_DIM)));
             this.melProcessed += EMB_HOP;
