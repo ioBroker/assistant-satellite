@@ -6,12 +6,14 @@
 import * as fs from 'node:fs';
 import { Satellite, loadConfig, DEFAULT_CONFIG, type SatelliteConfig } from './index';
 
+// Debug is off until we know the config's logLevel; the DEBUG env var forces it on regardless.
+let debugEnabled = !!process.env.DEBUG;
 const log = {
     info: (m: string): void => console.log(`[INFO]  ${m}`),
     warn: (m: string): void => console.warn(`[WARN]  ${m}`),
     error: (m: string): void => console.error(`[ERROR] ${m}`),
     debug: (m: string): void => {
-        if (process.env.DEBUG) {
+        if (debugEnabled) {
             console.log(`[DEBUG] ${m}`);
         }
     },
@@ -32,6 +34,10 @@ try {
 } catch (e) {
     log.error(`Cannot read ${configPath}: ${(e as Error).message}`);
     process.exit(1);
+}
+
+if (cfg.logLevel === 'debug') {
+    debugEnabled = true;
 }
 
 const satellite = new Satellite(cfg, { log, onStatus: s => log.debug(`status: ${s}`) });

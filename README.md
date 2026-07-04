@@ -41,6 +41,7 @@ lets ALSA resample so 16 kHz capture works on any card).
 
 | Key                              | Default          | Meaning                                             |
 |----------------------------------|------------------|-----------------------------------------------------|
+| `logLevel`                       | `info`           | `info` or `debug` (wake-word/mic diagnostics)       |
 | `device` / `room`                | `satellite` / `` | identity reported to the adapter                    |
 | `host` / `port`                  | `` / `7775`      | adapter address (fixed → **no MQTT broker needed**) |
 | `listenPort`                     | `7776`           | UDP port the satellite receives TTS on              |

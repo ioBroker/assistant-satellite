@@ -272,7 +272,7 @@ export class Satellite {
             this.wakeMaxRms = level;
         }
         if (this.wakeFrames >= 25) {
-            this.log.info(
+            this.log.debug(
                 `wake: ${this.wakeFrames} frames, peak mic RMS ${this.wakeMaxRms.toFixed(0)}, ` +
                     `peak score ${this.wakeMaxScore.toFixed(3)} (threshold ${this.cfg.wakewordThreshold})`,
             );

@@ -1,5 +1,8 @@
 /** Satellite configuration (loaded from config.json / CLI). */
 export interface SatelliteConfig {
+    /** Log verbosity. 'debug' also prints the wake-word/mic diagnostics. */
+    logLevel: 'info' | 'debug';
+
     /** Device identity reported to the adapter. */
     device: string;
     room: string;
@@ -47,6 +50,7 @@ export interface SatelliteConfig {
 }
 
 export const DEFAULT_CONFIG: SatelliteConfig = {
+    logLevel: 'info',
     device: 'satellite',
     room: '',
     host: '',
