@@ -7,6 +7,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { loadConfig, type SatelliteConfig } from './config';
+import { resolveBackend } from './audio';
+import { runChecks, printChecks } from './checks';
 import type { Logger } from './index';
 
 const SERVICE_NAME = 'assistant-satellite';
@@ -23,12 +26,26 @@ function requireLinux(): void {
     }
 }
 
-export function installService(configPath: string, log: Logger): void {
+export function installService(configPath: string, log: Logger, force = false): void {
     requireLinux();
     const absConfig = path.resolve(configPath);
     if (!fs.existsSync(absConfig)) {
         throw new Error(`config not found: ${absConfig} — run once to create/edit it, then install.`);
     }
+
+    // Preflight: verify rights, audio in/out, tools, config before writing the unit.
+    let cfg: SatelliteConfig;
+    try {
+        cfg = loadConfig(JSON.parse(fs.readFileSync(absConfig, 'utf8')) as Partial<SatelliteConfig>);
+    } catch (e) {
+        throw new Error(`cannot read ${absConfig}: ${(e as Error).message}`);
+    }
+    log.info('Preflight checks:');
+    const passed = printChecks(runChecks(cfg, resolveBackend(cfg.audioBackend), true), log);
+    if (!passed && !force) {
+        throw new Error('preflight checks failed — fix the above, or re-run with --force to install anyway.');
+    }
+
     const nodeBin = process.execPath;
     const cliPath = path.join(__dirname, 'cli.js');
     const workingDir = path.dirname(absConfig);

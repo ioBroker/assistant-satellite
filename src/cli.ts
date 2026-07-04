@@ -8,6 +8,8 @@
 import * as fs from 'node:fs';
 import { Satellite, loadConfig, DEFAULT_CONFIG, type SatelliteConfig } from './index';
 import { installService, uninstallService } from './service';
+import { runChecks, printChecks } from './checks';
+import { resolveBackend } from './audio';
 
 // Debug is off until we know the config's logLevel; the DEBUG env var forces it on regardless.
 let debugEnabled = !!process.env.DEBUG;
@@ -23,11 +25,28 @@ const log = {
 };
 
 const [command, ...rest] = process.argv.slice(2);
+const configArg = rest.find(a => !a.startsWith('--')) || 'config.json';
 
-// Service management subcommands (Linux/systemd).
+// `check` — run preflight checks (rights, audio in/out, tools, config) and exit.
+if (command === 'check') {
+    if (!fs.existsSync(configArg)) {
+        log.error(`config not found: ${configArg}`);
+        process.exit(1);
+    }
+    try {
+        const c = loadConfig(JSON.parse(fs.readFileSync(configArg, 'utf8')) as Partial<SatelliteConfig>);
+        const passed = printChecks(runChecks(c, resolveBackend(c.audioBackend), true), log);
+        process.exit(passed ? 0 : 1);
+    } catch (e) {
+        log.error((e as Error).message);
+        process.exit(1);
+    }
+}
+
+// Service management subcommands (Linux/systemd). `install` runs the checks first.
 if (command === 'install' || command === '--install') {
     try {
-        installService(rest[0] || 'config.json', log);
+        installService(configArg, log, rest.includes('--force'));
         process.exit(0);
     } catch (e) {
         log.error((e as Error).message);

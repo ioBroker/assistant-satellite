@@ -20,7 +20,7 @@ export function resolveBackend(pref: string): AudioBackend {
 }
 
 /** ffmpeg capture input args per platform (device = dshow name / avfoundation index / ALSA name). */
-function ffmpegInput(device: string): string[] {
+export function ffmpegInput(device: string): string[] {
     if (process.platform === 'win32') {
         return ['-f', 'dshow', '-i', `audio=${device || 'default'}`];
     }

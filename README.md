@@ -37,6 +37,21 @@ On first run it downloads the OpenWakeWord models into `modelsDir`. Then say the
 Find your ALSA device with `arecord -l` / `aplay -l` (→ `plughw:<card>,<device>`; the `plug` prefix
 lets ALSA resample so 16 kHz capture works on any card).
 
+### As a bare command
+
+The package exposes an `assistant-satellite` binary (like `mocha`, `eslint`, … — via the `bin` field),
+so you don't have to type `node build/cli.js`. Get it onto your PATH by installing globally:
+
+```bash
+npm i -g @iobroker/assistant-satellite     # after publish; or `npm i -g .` / `npm link` from a clone
+assistant-satellite check config.json
+assistant-satellite config.json
+sudo assistant-satellite install config.json
+```
+
+`npx @iobroker/assistant-satellite …` works without a global install. All subcommands
+(`check` / `install` / `uninstall`) accept the same forms.
+
 ## Configuration (`config.json`)
 
 | Key                              | Default          | Meaning                                              |
@@ -68,12 +83,21 @@ Built-in wake words: `hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`.
 ## Run as a service (systemd)
 
 The satellite already retries registration and re-registers automatically if the adapter restarts, so
-`systemd` only needs to keep the process alive. It can install itself (Linux, needs `sudo`):
+`systemd` only needs to keep the process alive.
+
+First verify everything is present (Node, systemd, root, audio tools, **live mic-in / speaker-out test**,
+config) — `install` runs these automatically and aborts on failure:
+
+```bash
+node build/cli.js check config.json     # dry-run of the same checks
+```
+
+Then install itself as a service (Linux, needs `sudo`):
 
 ```bash
 # from a clone (build first), pointing at your config:
 npm run build
-sudo node build/cli.js install config.json
+sudo node build/cli.js install config.json      # add --force to install despite check failures
 # …or, after `npm i -g @iobroker/assistant-satellite`:
 sudo assistant-satellite install /path/to/config.json
 ```
@@ -88,7 +112,7 @@ sudo systemctl restart assistant-satellite
 sudo node build/cli.js uninstall              # stop + remove  (or: sudo assistant-satellite uninstall)
 ```
 
-<details><summary>Prefer a hand-written unit file?</summary>
+<details><summary>Prefer a handwritten unit file?</summary>
 
 ```ini
 [Unit]
