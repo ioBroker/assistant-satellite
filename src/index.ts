@@ -20,6 +20,7 @@ export interface SatelliteHost {
 }
 
 export { Satellite } from './satellite';
-export { loadConfig, DEFAULT_CONFIG, type SatelliteConfig } from './config';
+export { LocalListener, type LocalListenerHost } from './localListener';
+export { loadConfig, DEFAULT_CONFIG, parseWakewords, type SatelliteConfig } from './config';
 export { probeWakeWord, type WakeProbeResult } from './probe';
 export type { SatelliteState } from './protocol';

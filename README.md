@@ -143,6 +143,9 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+* (@GermanBluefox) Added local listener option
+
 ### 0.1.3 (2026-07-05)
 * (@GermanBluefox) Added Wake-word probe
 
