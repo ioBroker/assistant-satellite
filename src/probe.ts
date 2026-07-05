@@ -4,6 +4,7 @@
  * verify detection from the GUI — works even before the satellite is fully configured (no server needed).
  */
 import { ensureModels } from './models';
+import { parseWakewords } from './config';
 import { WakeWord } from './wakeword';
 import { Mic, resolveBackend } from './audio';
 import { rms } from './vad';
@@ -31,8 +32,9 @@ export async function probeWakeWord(
     /** Called per frame with the CURRENT score/RMS and whether the wake word has fired so far. */
     onProgress?: (score: number, rms: number, detected: boolean) => void,
 ): Promise<WakeProbeResult> {
-    const models = await ensureModels(cfg.modelsDir, cfg.wakewordModel, log);
-    const wakeword = new WakeWord(models, cfg.wakewordThreshold, log);
+    const words = parseWakewords(cfg.wakewordModel);
+    const modelSets = await Promise.all(words.map(w => ensureModels(cfg.modelsDir, w, log)));
+    const wakeword = new WakeWord(modelSets, cfg.wakewordThreshold, log);
     await wakeword.load();
     const mic = new Mic(resolveBackend(cfg.audioBackend), cfg.micDevice, log);
 
