@@ -143,7 +143,7 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.1.0 (2026-07-05)
 * (@GermanBluefox) Added Wake-word probe
 
 ### 0.0.4 (2026-07-05)
