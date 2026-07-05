@@ -52,9 +52,7 @@ export class WakeWord {
         // melspec + embedding are identical across openWakeWord models — load them once from the first.
         this.melspec = await ort.InferenceSession.create(this.models[0].melspec);
         this.embedding = await ort.InferenceSession.create(this.models[0].embedding);
-        this.classifiers = await Promise.all(
-            this.models.map(m => ort.InferenceSession.create(m.wakeword)),
-        );
+        this.classifiers = await Promise.all(this.models.map(m => ort.InferenceSession.create(m.wakeword)));
         this.log.info(`Wake-word models loaded (${this.classifiers.length} wake word(s)).`);
         this.log.info(
             `  melspec   IO: in=[${this.melspec.inputNames.join(', ')}] out=[${this.melspec.outputNames.join(', ')}]`,

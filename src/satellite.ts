@@ -19,7 +19,7 @@ import { Mic, playPcm, pling, resolveBackend, type AudioBackend } from './audio'
 import { SilenceDetector, rms } from './vad';
 import { WakeWord } from './wakeword';
 import { ensureModels } from './models';
-import type { SatelliteConfig } from './config';
+import { parseWakewords, type SatelliteConfig } from './config';
 import type { SatelliteHost, Logger } from './index';
 
 /** 1280 samples (80 ms) of 16 kHz mono 16-bit PCM per processing frame. */
