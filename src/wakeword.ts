@@ -25,7 +25,8 @@ const EMB_DIM = 96;
 export class WakeWord {
     private melspec!: ort.InferenceSession;
     private embedding!: ort.InferenceSession;
-    private classifier!: ort.InferenceSession;
+    /** One classifier per wake word; the mel/embedding pipeline is shared. */
+    private classifiers: ort.InferenceSession[] = [];
 
     private melBuffer: number[][] = []; // rows of 32 mel bins
     private melProcessed = 0; // mel frames already turned into embeddings
@@ -33,25 +34,33 @@ export class WakeWord {
     private melShapeLogged = false;
     private embShapeLogged = false;
 
+    /** `models` may hold several wake words; they must share the same melspec/embedding models. */
+    private readonly models: ModelPaths[];
+
     constructor(
-        private readonly models: ModelPaths,
+        models: ModelPaths | ModelPaths[],
         private readonly threshold: number,
         private readonly log: Logger,
-    ) {}
+    ) {
+        this.models = Array.isArray(models) ? models : [models];
+        if (!this.models.length) {
+            throw new Error('WakeWord: at least one model is required');
+        }
+    }
 
     async load(): Promise<void> {
-        this.melspec = await ort.InferenceSession.create(this.models.melspec);
-        this.embedding = await ort.InferenceSession.create(this.models.embedding);
-        this.classifier = await ort.InferenceSession.create(this.models.wakeword);
-        this.log.info('Wake-word models loaded.');
+        // melspec + embedding are identical across openWakeWord models — load them once from the first.
+        this.melspec = await ort.InferenceSession.create(this.models[0].melspec);
+        this.embedding = await ort.InferenceSession.create(this.models[0].embedding);
+        this.classifiers = await Promise.all(
+            this.models.map(m => ort.InferenceSession.create(m.wakeword)),
+        );
+        this.log.info(`Wake-word models loaded (${this.classifiers.length} wake word(s)).`);
         this.log.info(
             `  melspec   IO: in=[${this.melspec.inputNames.join(', ')}] out=[${this.melspec.outputNames.join(', ')}]`,
         );
         this.log.info(
             `  embedding IO: in=[${this.embedding.inputNames.join(', ')}] out=[${this.embedding.outputNames.join(', ')}]`,
-        );
-        this.log.info(
-            `  classifier IO: in=[${this.classifier.inputNames.join(', ')}] out=[${this.classifier.outputNames.join(', ')}]`,
         );
     }
 
@@ -139,9 +148,8 @@ export class WakeWord {
         }
     }
 
+    /** Run every wake-word classifier over the current embedding window; return the highest score. */
     private async classify(): Promise<number> {
-        const inName = this.classifier.inputNames[0];
-        const outName = this.classifier.outputNames[0];
         const window = this.embBuffer.slice(-WW_FRAMES);
         const flat = new Float32Array(WW_FRAMES * EMB_DIM);
         for (let f = 0; f < WW_FRAMES; f++) {
@@ -149,9 +157,16 @@ export class WakeWord {
                 flat[f * EMB_DIM + d] = window[f][d];
             }
         }
-        const out = await this.classifier.run({
-            [inName]: new ort.Tensor('float32', flat, [1, WW_FRAMES, EMB_DIM]),
-        });
-        return (out[outName].data as Float32Array)[0];
+        let best = 0;
+        for (const clf of this.classifiers) {
+            const out = await clf.run({
+                [clf.inputNames[0]]: new ort.Tensor('float32', flat, [1, WW_FRAMES, EMB_DIM]),
+            });
+            const score = (out[clf.outputNames[0]].data as Float32Array)[0];
+            if (score > best) {
+                best = score;
+            }
+        }
+        return best;
     }
 }

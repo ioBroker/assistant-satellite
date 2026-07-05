@@ -71,3 +71,16 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
 export function loadConfig(partial: Partial<SatelliteConfig>): SatelliteConfig {
     return { ...DEFAULT_CONFIG, ...partial };
 }
+
+/**
+ * Parse the `wakewordModel` config into a list of wake words. Accepts several words separated by
+ * commas or whitespace (e.g. `"hey_jarvis, alexa"`). An empty spec yields `['']`, which `ensureModels`
+ * resolves to the built-in "hey_jarvis".
+ */
+export function parseWakewords(spec: string): string[] {
+    const list = (spec || '')
+        .split(/[,\s]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    return list.length ? list : [''];
+}

@@ -89,8 +89,9 @@ export class Satellite {
 
         await this.openSocket();
 
-        const models = await ensureModels(this.cfg.modelsDir, this.cfg.wakewordModel, this.log);
-        this.wakeword = new WakeWord(models, this.cfg.wakewordThreshold, this.log);
+        const words = parseWakewords(this.cfg.wakewordModel);
+        const modelSets = await Promise.all(words.map(w => ensureModels(this.cfg.modelsDir, w, this.log)));
+        this.wakeword = new WakeWord(modelSets, this.cfg.wakewordThreshold, this.log);
         await this.wakeword.load();
         this.plingPcm = pling();
 
