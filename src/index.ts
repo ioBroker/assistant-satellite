@@ -1,5 +1,5 @@
 /**
- * @iobroker/assistant-satellite — public API.
+ * \@iobroker/assistant-satellite — public API.
  *
  * The Satellite is dependency-injected with a host (logger + status callback) so the same code runs
  * standalone (CLI) and, later, inside an ioBroker adapter wrapper — with no ioBroker dependency here.

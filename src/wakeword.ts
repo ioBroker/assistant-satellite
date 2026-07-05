@@ -44,9 +44,15 @@ export class WakeWord {
         this.embedding = await ort.InferenceSession.create(this.models.embedding);
         this.classifier = await ort.InferenceSession.create(this.models.wakeword);
         this.log.info('Wake-word models loaded.');
-        this.log.info(`  melspec   IO: in=[${this.melspec.inputNames}] out=[${this.melspec.outputNames}]`);
-        this.log.info(`  embedding IO: in=[${this.embedding.inputNames}] out=[${this.embedding.outputNames}]`);
-        this.log.info(`  classifier IO: in=[${this.classifier.inputNames}] out=[${this.classifier.outputNames}]`);
+        this.log.info(
+            `  melspec   IO: in=[${this.melspec.inputNames.join(', ')}] out=[${this.melspec.outputNames.join(', ')}]`,
+        );
+        this.log.info(
+            `  embedding IO: in=[${this.embedding.inputNames.join(', ')}] out=[${this.embedding.outputNames.join(', ')}]`,
+        );
+        this.log.info(
+            `  classifier IO: in=[${this.classifier.inputNames.join(', ')}] out=[${this.classifier.outputNames.join(', ')}]`,
+        );
     }
 
     /** Reset the streaming buffers (call after a detection so it re-arms cleanly). */

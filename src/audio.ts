@@ -80,11 +80,12 @@ export class Mic {
         this.proc.stderr?.on('data', (d: Buffer) => this.log.debug(`${cmd}: ${d.toString().trim()}`));
         this.proc.on('error', e =>
             this.log.error(
-                `${cmd} failed: ${e.message} — is it installed? ` +
-                    (this.backend === 'ffmpeg' ? '(install ffmpeg)' : "(sudo apt install alsa-utils)"),
+                `${cmd} failed: ${e.message} — is it installed? ${this.backend === 'ffmpeg' ? '(install ffmpeg)' : '(sudo apt install alsa-utils)'}`,
             ),
         );
-        this.log.info(`Microphone capture started (${this.backend}: ${this.device || 'default'} @ ${AUDIO_SAMPLE_RATE} Hz).`);
+        this.log.info(
+            `Microphone capture started (${this.backend}: ${this.device || 'default'} @ ${AUDIO_SAMPLE_RATE} Hz).`,
+        );
     }
 
     stop(): void {
@@ -106,11 +107,36 @@ export function playPcm(
             backend === 'ffmpeg'
                 ? ([
                       'ffplay',
-                      ['-hide_banner', '-loglevel', 'error', '-nodisp', '-autoexit', '-f', 's16le', '-ar', String(sampleRate), '-ch_layout', 'mono', '-i', '-'],
+                      [
+                          '-hide_banner',
+                          '-loglevel',
+                          'error',
+                          '-nodisp',
+                          '-autoexit',
+                          '-f',
+                          's16le',
+                          '-ar',
+                          String(sampleRate),
+                          '-ch_layout',
+                          'mono',
+                          '-i',
+                          '-',
+                      ],
                   ] as const)
                 : ([
                       'aplay',
-                      ['-q', '-t', 'raw', '-f', 'S16_LE', '-c', '1', '-r', String(sampleRate), ...(device && device !== 'default' ? ['-D', device] : [])],
+                      [
+                          '-q',
+                          '-t',
+                          'raw',
+                          '-f',
+                          'S16_LE',
+                          '-c',
+                          '1',
+                          '-r',
+                          String(sampleRate),
+                          ...(device && device !== 'default' ? ['-D', device] : []),
+                      ],
                   ] as const);
 
         const proc = spawn(cmd, args);
@@ -133,7 +159,10 @@ export function pling(): Buffer {
         const t = i / rate;
         const freq = 880 + (1320 - 880) * (i / n);
         const fade = Math.sin((Math.PI * i) / n);
-        const val = Math.max(-32768, Math.min(32767, Math.round(32767 * 0.6 * fade * Math.sin(2 * Math.PI * freq * t))));
+        const val = Math.max(
+            -32768,
+            Math.min(32767, Math.round(32767 * 0.6 * fade * Math.sin(2 * Math.PI * freq * t))),
+        );
         buf.writeInt16LE(val, i * 2);
     }
     return buf;

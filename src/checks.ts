@@ -37,7 +37,21 @@ function checkCapture(cfg: SatelliteConfig, backend: AudioBackend): CheckResult 
         if (backend === 'ffmpeg') {
             out = execFileSync(
                 'ffmpeg',
-                ['-hide_banner', '-loglevel', 'error', ...ffmpegInput(cfg.micDevice), '-t', '1', '-ac', '1', '-ar', '16000', '-f', 's16le', '-'],
+                [
+                    '-hide_banner',
+                    '-loglevel',
+                    'error',
+                    ...ffmpegInput(cfg.micDevice),
+                    '-t',
+                    '1',
+                    '-ac',
+                    '1',
+                    '-ar',
+                    '16000',
+                    '-f',
+                    's16le',
+                    '-',
+                ],
                 { timeout: 8000, maxBuffer: 1 << 22 },
             );
         } else {
@@ -62,7 +76,21 @@ function checkPlayback(cfg: SatelliteConfig, backend: AudioBackend): CheckResult
         if (backend === 'ffmpeg') {
             execFileSync(
                 'ffplay',
-                ['-hide_banner', '-loglevel', 'error', '-nodisp', '-autoexit', '-f', 's16le', '-ar', '16000', '-ch_layout', 'mono', '-i', '-'],
+                [
+                    '-hide_banner',
+                    '-loglevel',
+                    'error',
+                    '-nodisp',
+                    '-autoexit',
+                    '-f',
+                    's16le',
+                    '-ar',
+                    '16000',
+                    '-ch_layout',
+                    'mono',
+                    '-i',
+                    '-',
+                ],
                 { input: silence, timeout: 8000 },
             );
         } else {
@@ -83,7 +111,9 @@ export function runChecks(cfg: SatelliteConfig, backend: AudioBackend, forServic
     const results: CheckResult[] = [];
 
     const major = Number(process.versions.node.split('.')[0]);
-    results.push(major >= 18 ? ok('node', `v${process.versions.node}`) : fail('node', `v${process.versions.node} (need ≥ 18)`));
+    results.push(
+        major >= 18 ? ok('node', `v${process.versions.node}`) : fail('node', `v${process.versions.node} (need ≥ 18)`),
+    );
 
     if (forService) {
         results.push(
