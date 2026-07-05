@@ -21,4 +21,5 @@ export interface SatelliteHost {
 
 export { Satellite } from './satellite';
 export { loadConfig, DEFAULT_CONFIG, type SatelliteConfig } from './config';
+export { probeWakeWord, type WakeProbeResult } from './probe';
 export type { SatelliteState } from './protocol';

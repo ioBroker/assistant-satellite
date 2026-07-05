@@ -143,6 +143,9 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+* (@GermanBluefox) Added Wake-word probe
+
 ### 0.0.4 (2026-07-05)
 * (@GermanBluefox) Barge-in: if the wake word fires while the reply is playing, stop playback and listen again.
 
