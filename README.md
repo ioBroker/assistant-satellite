@@ -150,7 +150,7 @@ threshold should be validated on the target device.
 
 MIT License
 
-Copyright (c) 2025-2026 Denis Haev <dogafox@gmail.com>
+Copyright (c) 2026 Denis Haev <dogafox@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
