@@ -1,58 +1,66 @@
 {
-  "name": "@iobroker/assistant-satellite",
-  "version": "0.0.3",
-  "description": "Standalone voice satellite for the ioBroker.assistant adapter (wake word + mic streaming + TTS playback over the Hannah UDP protocol). Runs on a bare Pi via npx, no ioBroker required.",
-  "author": "ioBroker",
-  "publishConfig": {
-    "access": "public"
-  },
-  "license": "MIT",
-  "keywords": [
-    "iobroker",
-    "assistant",
-    "voice",
-    "satellite",
-    "wakeword",
-    "openwakeword"
-  ],
-  "type": "commonjs",
-  "main": "build/index.js",
-  "types": "build/index.d.ts",
-  "bin": {
-    "assistant-satellite": "build/cli.js"
-  },
-  "engines": {
-    "node": ">=22"
-  },
-  "files": [
-    "build/",
-    "config.example.json",
-    "README.md",
-    "LICENSE"
-  ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "node build/cli.js",
-    "test": "echo \"no tests yet\" && exit 0",
-    "test:package": "echo \"not required\" && exit 0",
-    "test:integration": "echo \"no tests yet\" && exit 0",
-    "prepublishOnly": "npm run build",
-    "lint": "eslint -c eslint.config.mjs",
-    "release-patch": "release-script patch --yes",
-    "release-minor": "release-script minor --yes",
-    "release-major": "release-script major --yes",
-    "release": "release-script",
-    "update-packages": "npx -y npm-check-updates --upgrade"
-  },
-  "dependencies": {
-    "onnxruntime-node": "^1.27.0"
-  },
-  "devDependencies": {
-    "@alcalzone/release-script": "^5.2.1",
-    "@alcalzone/release-script-plugin-iobroker": "^5.2.0",
-    "@alcalzone/release-script-plugin-license": "^5.2.0",
-    "@iobroker/eslint-config": "^2.3.4",
-    "@types/node": "^20.19.43",
-    "typescript": "~6.0.3"
-  }
+    "name": "@iobroker/assistant-satellite",
+    "version": "0.0.3",
+    "description": "Standalone voice satellite for the ioBroker.assistant adapter (wake word + mic streaming + TTS playback over the Hannah UDP protocol). Runs on a bare Pi via npx, no ioBroker required.",
+    "author": "ioBroker",
+    "publishConfig": {
+        "access": "public"
+    },
+    "license": "MIT",
+    "keywords": [
+        "iobroker",
+        "assistant",
+        "voice",
+        "satellite",
+        "wakeword",
+        "openwakeword"
+    ],
+    "type": "commonjs",
+    "main": "build/index.js",
+    "types": "build/index.d.ts",
+    "bin": {
+        "assistant-satellite": "build/cli.js"
+    },
+    "engines": {
+        "node": ">=22"
+    },
+    "files": [
+        "build/",
+        "config.example.json",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "start": "node build/cli.js",
+        "test": "echo \"no tests yet\" && exit 0",
+        "test:package": "echo \"not required\" && exit 0",
+        "test:integration": "echo \"no tests yet\" && exit 0",
+        "prepublishOnly": "npm run build",
+        "lint": "eslint -c eslint.config.mjs",
+        "release-patch": "release-script patch --yes",
+        "release-minor": "release-script minor --yes",
+        "release-major": "release-script major --yes",
+        "release": "release-script",
+        "update-packages": "npx -y npm-check-updates --upgrade"
+    },
+    "dependencies": {
+        "onnxruntime-node": "^1.27.0"
+    },
+    "devDependencies": {
+        "@alcalzone/release-script": "^5.2.1",
+        "@alcalzone/release-script-plugin-iobroker": "^5.2.0",
+        "@alcalzone/release-script-plugin-license": "^5.2.0",
+        "@iobroker/eslint-config": "^2.3.4",
+        "@types/node": "^20.19.43",
+        "typescript": "~6.0.3"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/ioBroker/assistant-satellite.git"
+    },
+    "bugs": {
+        "url": "https://github.com/ioBroker/assistant-satellite/issues"
+    },
+    "homepage": "https://github.com/ioBroker/assistant-satellite"
 }
