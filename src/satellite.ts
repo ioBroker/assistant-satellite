@@ -18,7 +18,6 @@ import { Mic, playPcm, pling, resolveBackend, type AudioBackend } from './audio'
 import { SilenceDetector, rms } from './vad';
 import { WakeWord } from './wakeword';
 import { ensureModels } from './models';
-import { discoverServer } from './mqtt';
 import type { SatelliteConfig } from './config';
 import type { SatelliteHost, Logger } from './index';
 
@@ -80,7 +79,7 @@ export class Satellite {
 
     async start(): Promise<void> {
         this.running = true;
-        const addr = await this.resolveAddress();
+        const addr = this.resolveAddress();
         this.serverHost = addr.host;
         this.serverPort = addr.port;
         this.log.info(`Adapter address: ${this.serverHost}:${this.serverPort}`);
@@ -119,14 +118,11 @@ export class Satellite {
 
     // ── setup ──────────────────────────────────────────────────────────────
 
-    private async resolveAddress(): Promise<{ host: string; port: number }> {
-        if (this.cfg.host) {
-            return { host: this.cfg.host, port: this.cfg.port };
+    private resolveAddress(): { host: string; port: number } {
+        if (!this.cfg.host) {
+            throw new Error('No adapter address: set "host" (and "port") in the config.');
         }
-        if (this.cfg.mqttBroker) {
-            return discoverServer(this.cfg, this.log);
-        }
-        throw new Error('No adapter address: set "host" (fixed) or "mqttBroker" (discovery) in the config.');
+        return { host: this.cfg.host, port: this.cfg.port };
     }
 
     private openSocket(): Promise<void> {

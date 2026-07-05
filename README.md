@@ -58,9 +58,8 @@ sudo assistant-satellite install config.json
 |----------------------------------|------------------|------------------------------------------------------|
 | `logLevel`                       | `info`           | `info` or `debug` (wake-word/mic diagnostics)        |
 | `device` / `room`                | `satellite` / `` | identity reported to the adapter                     |
-| `host` / `port`                  | `` / `7775`      | adapter address (fixed → **no MQTT broker needed**)  |
+| `host` / `port`                  | `` / `7775`      | ioBroker.assistant voice-server address              |
 | `listenPort`                     | `7776`           | UDP port the satellite receives TTS on               |
-| `mqttBroker` …                   | ``               | optional discovery instead of a fixed `host`         |
 | `audioBackend`                   | `auto`           | `auto` / `alsa` / `ffmpeg`                           |
 | `micDevice` / `speakerDevice`    | `default`        | see per-platform notes below                         |
 | `wakewordModel`                  | `hey_jarvis`     | built-in name, URL, or local `.onnx` path            |

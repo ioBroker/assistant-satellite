@@ -7,19 +7,11 @@ export interface SatelliteConfig {
     device: string;
     room: string;
 
-    /** Adapter (voice-server) address. Discovery via MQTT is optional; a fixed host needs no broker. */
+    /** Adapter (voice-server) address. */
     host: string;
     port: number;
     /** UDP port the satellite listens on for TTS/control from the adapter. */
     listenPort: number;
-
-    /** Optional MQTT discovery — leave broker empty to run without a broker (fixed host only). */
-    mqttBroker: string;
-    mqttPort: number;
-    mqttUser: string;
-    mqttPass: string;
-    discoveryTopic: string;
-    discoveryTimeoutMs: number;
 
     /** Audio backend: 'auto' (alsa on Linux, ffmpeg elsewhere), or force 'alsa' / 'ffmpeg'. */
     audioBackend: 'auto' | 'alsa' | 'ffmpeg';
@@ -56,12 +48,6 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
     host: '',
     port: 7775,
     listenPort: 7776,
-    mqttBroker: '',
-    mqttPort: 1883,
-    mqttUser: '',
-    mqttPass: '',
-    discoveryTopic: 'hannah/server',
-    discoveryTimeoutMs: 5000,
     audioBackend: 'auto',
     micDevice: 'default',
     speakerDevice: 'default',

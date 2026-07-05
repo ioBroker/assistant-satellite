@@ -108,9 +108,9 @@ export function runChecks(cfg: SatelliteConfig, backend: AudioBackend, forServic
     results.push(checkPlayback(cfg, backend));
 
     results.push(
-        cfg.host || cfg.mqttBroker
-            ? ok('config:server', cfg.host ? `host ${cfg.host}:${cfg.port}` : `discovery via ${cfg.mqttBroker}`)
-            : fail('config:server', 'set "host" (or "mqttBroker") so the satellite can reach the adapter'),
+        cfg.host
+            ? ok('config:server', `host ${cfg.host}:${cfg.port}`)
+            : fail('config:server', 'set "host" so the satellite can reach the adapter'),
     );
 
     try {
