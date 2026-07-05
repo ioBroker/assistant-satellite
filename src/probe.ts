@@ -77,8 +77,8 @@ export async function probeWakeWord(
         void pump();
     });
     await new Promise<void>(res => setTimeout(res, Math.max(1, seconds) * 1000));
-    mic.stop();
     await new Promise<void>(res => setTimeout(res, 200)); // let the last frames drain
+    await mic.stop();
 
     return { detected, peakScore, peakRms, frames, threshold: cfg.wakewordThreshold };
 }

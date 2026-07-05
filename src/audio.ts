@@ -33,6 +33,10 @@ export function ffmpegInput(device: string): string[] {
 /** Continuous microphone capture at 16 kHz mono 16-bit; emits raw PCM chunks. */
 export class Mic {
     private proc: ChildProcess | null = null;
+    /** Set by stop() so the expected exit isn't reported as an error. */
+    private stopping = false;
+    /** Last stderr line from the capture process (surfaced if it dies unexpectedly). */
+    private lastErr = '';
 
     constructor(
         private readonly backend: AudioBackend,
@@ -41,6 +45,8 @@ export class Mic {
     ) {}
 
     start(onData: (pcm: Buffer) => void): void {
+        this.stopping = false;
+        this.lastErr = '';
         const [cmd, args] =
             this.backend === 'ffmpeg'
                 ? ([
@@ -77,20 +83,63 @@ export class Mic {
 
         this.proc = spawn(cmd, args);
         this.proc.stdout?.on('data', (d: Buffer) => onData(d));
-        this.proc.stderr?.on('data', (d: Buffer) => this.log.debug(`${cmd}: ${d.toString().trim()}`));
+        this.proc.stderr?.on('data', (d: Buffer) => {
+            this.lastErr = d.toString().trim();
+            this.log.debug(`${cmd}: ${this.lastErr}`);
+        });
         this.proc.on('error', e =>
             this.log.error(
                 `${cmd} failed: ${e.message} — is it installed? ${this.backend === 'ffmpeg' ? '(install ffmpeg)' : '(sudo apt install alsa-utils)'}`,
             ),
         );
+        // A healthy capture runs until stop(); an early exit means the device could not be opened.
+        this.proc.on('close', code => {
+            if (this.stopping) {
+                return;
+            }
+            const hint =
+                this.backend === 'alsa'
+                    ? " Pick a real capture device — run 'arecord -l' and set micDevice to e.g. 'plughw:1,0'. The ALSA 'default' device often has no capture slave."
+                    : ' Check the microphone device / that ffmpeg can open it.';
+            this.log.warn(
+                `Microphone capture stopped unexpectedly (${cmd} exit ${code ?? '?'}).${this.lastErr ? ` Last error: ${this.lastErr}.` : ''}${hint}`,
+            );
+        });
         this.log.info(
             `Microphone capture started (${this.backend}: ${this.device || 'default'} @ ${AUDIO_SAMPLE_RATE} Hz).`,
         );
     }
 
-    stop(): void {
-        this.proc?.kill();
+    /** Stop capture and wait for the process to actually exit so ALSA/the device is released. */
+    async stop(): Promise<void> {
+        this.stopping = true;
+        const proc = this.proc;
         this.proc = null;
+        if (!proc) {
+            return;
+        }
+        await new Promise<void>(resolve => {
+            let done = false;
+            const finish = (): void => {
+                if (!done) {
+                    done = true;
+                    resolve();
+                }
+            };
+            proc.once('close', finish);
+            proc.kill(); // SIGTERM
+            // Safety net: force-kill if it does not exit promptly, then resolve anyway.
+            setTimeout(() => {
+                if (!done) {
+                    try {
+                        proc.kill('SIGKILL');
+                    } catch {
+                        /* already gone */
+                    }
+                    finish();
+                }
+            }, 1500);
+        });
     }
 }
 

@@ -111,7 +111,7 @@ export class Satellite {
             clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = null;
         }
-        this.mic?.stop();
+        await this.mic?.stop();
         this.mic = null;
         const socket = this.socket;
         this.socket = null;
