@@ -1,6 +1,6 @@
 {
   "name": "@iobroker/assistant-satellite",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Standalone voice satellite for the ioBroker.assistant adapter (wake word + mic streaming + TTS playback over the Hannah UDP protocol). Runs on a bare Pi via npx, no ioBroker required.",
   "author": "ioBroker",
   "publishConfig": {
