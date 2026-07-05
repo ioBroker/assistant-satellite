@@ -36,6 +36,9 @@ export interface SatelliteConfig {
     /** Number of pre-wake 80 ms chunks prepended to the recording (so no speech is lost). */
     preBufferChunks: number;
 
+    /** Barge-in: if the wake word fires while the reply is playing, stop playback and listen again. */
+    bargeIn: boolean;
+
     /** Heartbeat / registration. */
     registrationTimeoutMs: number;
     heartbeatIntervalMs: number;
@@ -59,6 +62,7 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
     minRecordMs: 800,
     maxRecordMs: 8000,
     preBufferChunks: 5,
+    bargeIn: true,
     registrationTimeoutMs: 5000,
     heartbeatIntervalMs: 10000,
 };

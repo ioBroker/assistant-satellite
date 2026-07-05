@@ -14,6 +14,7 @@ import {
     type SatToServer,
     type SatelliteState,
 } from './protocol';
+import type { ChildProcess } from 'node:child_process';
 import { Mic, playPcm, pling, resolveBackend, type AudioBackend } from './audio';
 import { SilenceDetector, rms } from './vad';
 import { WakeWord } from './wakeword';
@@ -40,6 +41,8 @@ export class Satellite {
     private mic: Mic | null = null;
     private readonly backend: AudioBackend;
     private plingPcm: Buffer = Buffer.alloc(0);
+    /** Current reply playback process (for barge-in); null when nothing is playing. */
+    private playbackProc: ChildProcess | null = null;
     private heartbeatTimer: NodeJS.Timeout | null = null;
 
     // mic frame assembly
@@ -279,6 +282,12 @@ export class Satellite {
 
         if (this.wakeword.triggered(score)) {
             this.log.info(`Wake word detected (score ${(score as number).toFixed(3)}).`);
+            // Barge-in: if a reply is currently playing, stop it so the user can interrupt.
+            if (this.cfg.bargeIn && this.playbackProc) {
+                this.log.info('Barge-in: stopping playback.');
+                this.playbackProc.kill();
+                this.playbackProc = null;
+            }
             this.wakeword.reset();
             await this.startRecording();
         }
@@ -287,7 +296,7 @@ export class Satellite {
     private async startRecording(): Promise<void> {
         this.setStatus('listening');
         this.ttsDiscard = true; // drop any late TTS from a previous turn
-        await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.log);
+        await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.log).done;
         this.ttsDiscard = false;
         this.ttsChunks = [];
 
@@ -378,7 +387,13 @@ export class Satellite {
             return;
         }
         this.log.info(`Playing reply (${(pcm.length / 2 / sampleRate).toFixed(1)} s @ ${sampleRate} Hz).`);
-        await playPcm(pcm, sampleRate, this.backend, this.cfg.speakerDevice, this.log);
+        const { proc, done } = playPcm(pcm, sampleRate, this.backend, this.cfg.speakerDevice, this.log);
+        this.playbackProc = proc; // tracked so the wake word can barge-in
+        try {
+            await done;
+        } finally {
+            this.playbackProc = null;
+        }
     }
 
     // ── senders / status ───────────────────────────────────────────────────

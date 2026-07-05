@@ -94,59 +94,63 @@ export class Mic {
     }
 }
 
-/** Play raw mono 16-bit PCM at the given rate; resolves when playback finishes. */
+/**
+ * Play raw mono 16-bit PCM at the given rate. Returns the child process (so playback can be cancelled
+ * for barge-in) and a `done` promise that resolves when playback finishes or is killed.
+ */
 export function playPcm(
     pcm: Buffer,
     sampleRate: number,
     backend: AudioBackend,
     device: string,
     log: Logger,
-): Promise<void> {
-    return new Promise<void>(resolve => {
-        const [cmd, args] =
-            backend === 'ffmpeg'
-                ? ([
-                      'ffplay',
-                      [
-                          '-hide_banner',
-                          '-loglevel',
-                          'error',
-                          '-nodisp',
-                          '-autoexit',
-                          '-f',
-                          's16le',
-                          '-ar',
-                          String(sampleRate),
-                          '-ch_layout',
-                          'mono',
-                          '-i',
-                          '-',
-                      ],
-                  ] as const)
-                : ([
-                      'aplay',
-                      [
-                          '-q',
-                          '-t',
-                          'raw',
-                          '-f',
-                          'S16_LE',
-                          '-c',
-                          '1',
-                          '-r',
-                          String(sampleRate),
-                          ...(device && device !== 'default' ? ['-D', device] : []),
-                      ],
-                  ] as const);
+): { proc: ChildProcess; done: Promise<void> } {
+    const [cmd, args] =
+        backend === 'ffmpeg'
+            ? ([
+                  'ffplay',
+                  [
+                      '-hide_banner',
+                      '-loglevel',
+                      'error',
+                      '-nodisp',
+                      '-autoexit',
+                      '-f',
+                      's16le',
+                      '-ar',
+                      String(sampleRate),
+                      '-ch_layout',
+                      'mono',
+                      '-i',
+                      '-',
+                  ],
+              ] as const)
+            : ([
+                  'aplay',
+                  [
+                      '-q',
+                      '-t',
+                      'raw',
+                      '-f',
+                      'S16_LE',
+                      '-c',
+                      '1',
+                      '-r',
+                      String(sampleRate),
+                      ...(device && device !== 'default' ? ['-D', device] : []),
+                  ],
+              ] as const);
 
-        const proc = spawn(cmd, args);
+    const proc = spawn(cmd, args);
+    const done = new Promise<void>(resolve => {
         proc.on('close', () => resolve());
         proc.on('error', e => {
             log.error(`${cmd} failed: ${e.message}`);
             resolve();
         });
-        proc.stdin?.end(pcm);
     });
+    proc.stdin?.end(pcm);
+    return { proc, done };
 }
 
 /** A short rising "listening" beep (mono 16-bit @ 16 kHz), synthesised once. */
