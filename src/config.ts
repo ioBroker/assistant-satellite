@@ -39,6 +39,13 @@ export interface SatelliteConfig {
     /** Barge-in: if the wake word fires while the reply is playing, stop playback and listen again. */
     bargeIn: boolean;
 
+    /** Follow-up: keep the mic open after a reply so the user can continue without the wake word. */
+    followUp: boolean;
+    /** How long (ms) to wait for the user to start a follow-up before returning to wake-word mode. */
+    followUpWindowMs: number;
+    /** Max consecutive follow-up turns per wake before requiring the wake word again. */
+    maxFollowUps: number;
+
     /** Heartbeat / registration. */
     registrationTimeoutMs: number;
     heartbeatIntervalMs: number;
@@ -63,6 +70,9 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
     maxRecordMs: 8000,
     preBufferChunks: 5,
     bargeIn: true,
+    followUp: false,
+    followUpWindowMs: 6000,
+    maxFollowUps: 4,
     registrationTimeoutMs: 5000,
     heartbeatIntervalMs: 10000,
 };

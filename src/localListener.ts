@@ -11,7 +11,7 @@ import type { ChildProcess } from 'node:child_process';
 import { WakeWord } from './wakeword';
 import { ensureModels } from './models';
 import { Mic, playPcm, pling, resolveBackend, type AudioBackend } from './audio';
-import { SilenceDetector } from './vad';
+import { SilenceDetector, rms } from './vad';
 import { AUDIO_SAMPLE_RATE } from './protocol';
 import { parseWakewords, type SatelliteConfig } from './config';
 import type { Logger, SatelliteState } from './index';
@@ -43,6 +43,10 @@ export class LocalListener {
     private pumping = false;
     private running = false;
     private playbackProc: ChildProcess | null = null;
+    /** Follow-up: after a reply, listen for the user to keep talking without the wake word. */
+    private waitingFollowUp = false;
+    private followUpDeadline = 0;
+    private followUpCount = 0;
 
     constructor(
         private readonly cfg: SatelliteConfig,
@@ -104,6 +108,21 @@ export class LocalListener {
             }
             return;
         }
+        // Follow-up window: keep the mic open after a reply so the user can continue without the wake word.
+        if (this.waitingFollowUp) {
+            if (Date.now() > this.followUpDeadline) {
+                this.waitingFollowUp = false;
+                this.setStatus('idle'); // nobody continued → back to wake-word mode
+                return;
+            }
+            if (rms(frame) >= this.cfg.silenceThreshold) {
+                this.waitingFollowUp = false;
+                this.host.log.info('Follow-up speech detected — continuing the conversation.');
+                await this.startRecording(false); // no wake beep
+                this.recChunks.push(frame); // keep the speech onset
+            }
+            return;
+        }
         // Wake-word listening with a rolling pre-buffer so speech during inference is not lost.
         this.preBuffer.push(frame);
         if (this.preBuffer.length > this.cfg.preBufferChunks) {
@@ -113,13 +132,16 @@ export class LocalListener {
         if (this.wakeword.triggered(score)) {
             this.host.log.info(`Wake word detected (score ${(score as number).toFixed(3)}).`);
             this.wakeword.reset();
+            this.followUpCount = 0; // a fresh wake word starts a new conversation
             await this.startRecording();
         }
     }
 
-    private async startRecording(): Promise<void> {
+    private async startRecording(beep = true): Promise<void> {
         this.setStatus('listening');
-        await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.host.log).done;
+        if (beep) {
+            await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.host.log).done;
+        }
         // Drop the beep echo + inference backlog so recording runs in real time (else the silence
         // detector races through buffered quiet frames and ends the utterance too early).
         this.micRemainder = Buffer.alloc(0);
@@ -139,9 +161,11 @@ export class LocalListener {
         const pcm = Buffer.concat(this.recChunks);
         this.recChunks = [];
         this.setStatus('processing');
+        let spoke = false;
         try {
             const reply = await this.host.onUtterance(pcm, AUDIO_SAMPLE_RATE);
             if (reply && reply.pcm.length && this.running) {
+                spoke = true;
                 this.setStatus('speaking');
                 const { proc, done } = playPcm(
                     reply.pcm,
@@ -162,7 +186,18 @@ export class LocalListener {
         } finally {
             this.micRemainder = Buffer.alloc(0); // discard audio captured while processing/speaking
             this.preBuffer = [];
-            this.setStatus('idle');
+            // Open a follow-up window (mic stays on, no wake word) if the assistant answered and we still
+            // have follow-up budget — enables "…and the kitchen too" without repeating the wake word.
+            if (this.cfg.followUp && spoke && this.running && this.followUpCount < this.cfg.maxFollowUps) {
+                this.followUpCount++;
+                this.waitingFollowUp = true;
+                this.followUpDeadline = Date.now() + this.cfg.followUpWindowMs;
+                this.setStatus('listening');
+            } else {
+                this.followUpCount = 0;
+                this.waitingFollowUp = false;
+                this.setStatus('idle');
+            }
         }
     }
 }
