@@ -164,7 +164,9 @@ export class LocalListener {
         // Exponential backoff, capped at 30 s, so a transient I/O error recovers on its own.
         const delay = Math.min(30_000, 2_000 * 2 ** Math.min(this.micRetries, 4));
         this.micRetries++;
-        this.host.log.warn(`Restarting microphone capture in ${Math.round(delay / 1000)}s (attempt ${this.micRetries}).`);
+        this.host.log.warn(
+            `Restarting microphone capture in ${Math.round(delay / 1000)}s (attempt ${this.micRetries}).`,
+        );
         if (this.micRestartTimer) {
             clearTimeout(this.micRestartTimer);
         }
