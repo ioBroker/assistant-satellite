@@ -27,10 +27,7 @@ export interface LocalListenerHost {
      * null to stay silent (e.g. nothing recognised). Set `listen: true` to keep the mic open for the
      * user's answer without a wake word — used when the assistant's reply is a question.
      */
-    onUtterance(
-        pcm: Buffer,
-        sampleRate: number,
-    ): Promise<{ pcm: Buffer; sampleRate: number; listen?: boolean } | null>;
+    onUtterance(pcm: Buffer, sampleRate: number): Promise<{ pcm: Buffer; sampleRate: number; listen?: boolean } | null>;
     /**
      * Microphone capture died and could not be (re)opened — `message` describes it (device + last error).
      * Called on each failed (re)start attempt; the listener keeps retrying with backoff. The adapter can
@@ -299,7 +296,9 @@ export class LocalListener {
                 this.followUpDeadline = Date.now() + this.cfg.followUpWindowMs;
                 this.setStatus('listening');
                 if (assistantWantsMic) {
-                    this.host.log.info('Mic ON — assistant asked a question, listening for your answer (no wake word).');
+                    this.host.log.info(
+                        'Mic ON — assistant asked a question, listening for your answer (no wake word).',
+                    );
                 } else {
                     this.host.log.debug('Follow-up window open (mic on, no wake word).');
                 }
