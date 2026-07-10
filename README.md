@@ -143,6 +143,9 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+* (@GermanBluefox) Detect mute state
+
 ### 0.1.5 (2026-07-06)
 * (@GermanBluefox) Implemented the follow-up dialog possibility
 

@@ -44,7 +44,15 @@ export class Mic {
         private readonly log: Logger,
     ) {}
 
-    start(onData: (pcm: Buffer) => void): void {
+    /**
+     * Start capturing. `onData` receives raw PCM chunks. `onExit` (optional) is called once if the capture
+     * process dies **unexpectedly** (not via {@link stop}) — the caller uses it to surface a mic error and
+     * restart/fall back to another device.
+     */
+    start(
+        onData: (pcm: Buffer) => void,
+        onExit?: (info: { code: number | null; lastErr: string; hint: string }) => void,
+    ): void {
         this.stopping = false;
         this.lastErr = '';
         const [cmd, args] =
@@ -104,6 +112,7 @@ export class Mic {
             this.log.warn(
                 `Microphone capture stopped unexpectedly (${cmd} exit ${code ?? '?'}).${this.lastErr ? ` Last error: ${this.lastErr}.` : ''}${hint}`,
             );
+            onExit?.({ code: code ?? null, lastErr: this.lastErr, hint });
         });
         this.log.info(
             `Microphone capture started (${this.backend}: ${this.device || 'default'} @ ${AUDIO_SAMPLE_RATE} Hz).`,
