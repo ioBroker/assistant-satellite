@@ -24,9 +24,13 @@ export interface LocalListenerHost {
     onStatus?(state: SatelliteState): void;
     /**
      * A complete recorded utterance (16 kHz mono 16-bit PCM). Return the reply audio to play back, or
-     * null to stay silent (e.g. nothing recognised).
+     * null to stay silent (e.g. nothing recognised). Set `listen: true` to keep the mic open for the
+     * user's answer without a wake word — used when the assistant's reply is a question.
      */
-    onUtterance(pcm: Buffer, sampleRate: number): Promise<{ pcm: Buffer; sampleRate: number } | null>;
+    onUtterance(
+        pcm: Buffer,
+        sampleRate: number,
+    ): Promise<{ pcm: Buffer; sampleRate: number; listen?: boolean } | null>;
     /**
      * Microphone capture died and could not be (re)opened — `message` describes it (device + last error).
      * Called on each failed (re)start attempt; the listener keeps retrying with backoff. The adapter can
@@ -258,8 +262,10 @@ export class LocalListener {
         this.recChunks = [];
         this.setStatus('processing');
         let spoke = false;
+        let assistantWantsMic = false;
         try {
             const reply = await this.host.onUtterance(pcm, AUDIO_SAMPLE_RATE);
+            assistantWantsMic = reply?.listen === true;
             if (reply && reply.pcm.length && this.running) {
                 spoke = true;
                 this.setStatus('speaking');
@@ -282,13 +288,21 @@ export class LocalListener {
         } finally {
             this.micRemainder = Buffer.alloc(0); // discard audio captured while processing/speaking
             this.preBuffer = [];
-            // Open a follow-up window (mic stays on, no wake word) if the assistant answered and we still
-            // have follow-up budget — enables "…and the kitchen too" without repeating the wake word.
-            if (this.cfg.followUp && spoke && this.running && this.followUpCount < this.cfg.maxFollowUps) {
+            // Open a follow-up window (mic stays on, no wake word) when the assistant asked us to keep
+            // listening (its reply was a question → `listen`), or generally if follow-up is enabled and we
+            // still have budget — enables "…and the kitchen too" / answering a clarifying question without
+            // repeating the wake word.
+            const wantMic = assistantWantsMic || this.cfg.followUp;
+            if (wantMic && spoke && this.running && this.followUpCount < this.cfg.maxFollowUps) {
                 this.followUpCount++;
                 this.waitingFollowUp = true;
                 this.followUpDeadline = Date.now() + this.cfg.followUpWindowMs;
                 this.setStatus('listening');
+                if (assistantWantsMic) {
+                    this.host.log.info('Mic ON — assistant asked a question, listening for your answer (no wake word).');
+                } else {
+                    this.host.log.debug('Follow-up window open (mic on, no wake word).');
+                }
             } else {
                 this.followUpCount = 0;
                 this.waitingFollowUp = false;
