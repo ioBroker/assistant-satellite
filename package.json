@@ -45,7 +45,7 @@
     "update-packages": "npx -y npm-check-updates --upgrade"
   },
   "dependencies": {
-    "onnxruntime-node": "^1.27.0"
+    "onnxruntime-node": "^1.29.0"
   },
   "devDependencies": {
     "@alcalzone/release-script": "^5.2.1",
