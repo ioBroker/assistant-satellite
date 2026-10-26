@@ -31,6 +31,12 @@ const RECONNECT_MAX_BACKOFF_MS = 30_000;
 
 const sleep = (ms: number): Promise<void> => new Promise(res => setTimeout(res, ms));
 
+/** A volume as an integer percentage 0–100 (anything unreadable counts as full volume). */
+function clampVolume(level: number): number {
+    const n = Math.round(Number(level));
+    return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 100;
+}
+
 export class Satellite {
     private readonly log: Logger;
     private socket: dgram.Socket | null = null;
@@ -66,6 +72,18 @@ export class Satellite {
     private ttsChunks: Buffer[] = [];
     private ttsDiscard = false;
 
+    // follow-up: re-open the mic without a wake word after a reply
+    /** An utterance was sent and its reply is still to come (an announcement is no reply). */
+    private awaitingReply = false;
+    /** The adapter asked for the mic once the current playback is over. */
+    private listenAfterPlayback = false;
+    private waitingFollowUp = false;
+    private followUpDeadline = 0;
+    private followUpCount = 0;
+
+    /** Playback volume 0–100 (see `SatelliteConfig.volume`). */
+    private volume: number;
+
     private registerResolve: (() => void) | null = null;
     private running = false;
     private heartbeatMisses = 0;
@@ -78,6 +96,7 @@ export class Satellite {
     ) {
         this.log = host.log;
         this.backend = resolveBackend(cfg.audioBackend);
+        this.volume = clampVolume(cfg.volume);
     }
 
     async start(): Promise<void> {
@@ -97,6 +116,7 @@ export class Satellite {
 
         // Retry until the adapter answers, so the satellite survives the adapter being down at boot.
         await this.registerWithRetry();
+        this.reportVolume();
         this.heartbeatTimer = setInterval(() => this.heartbeatTick(), this.cfg.heartbeatIntervalMs);
 
         this.mic = new Mic(this.backend, this.cfg.micDevice, this.log);
@@ -171,6 +191,7 @@ export class Satellite {
         this.log.warn('Adapter unreachable — re-registering …');
         try {
             await this.registerWithRetry();
+            this.reportVolume();
             this.log.info('Re-registered with the adapter.');
         } finally {
             this.reconnecting = false;
@@ -254,6 +275,26 @@ export class Satellite {
             return;
         }
 
+        // Follow-up window: the mic is open without a wake word; speech starts a recording, silence until
+        // the deadline drops back to wake-word mode (nothing is streamed, so no STT is paid for silence).
+        if (this.waitingFollowUp) {
+            if (Date.now() > this.followUpDeadline) {
+                this.waitingFollowUp = false;
+                this.log.debug('Follow-up window closed — back to the wake word.');
+                this.setStatus('idle');
+                return;
+            }
+            if (rms(frame) >= this.cfg.silenceThreshold) {
+                this.waitingFollowUp = false;
+                this.log.info('Follow-up speech detected — continuing the conversation.');
+                await this.startRecording(false); // no beep: the user is already talking
+                this.sendAudio(frame); // keep the speech onset
+                this.recFrames++;
+                this.silence!.push(frame);
+            }
+            return;
+        }
+
         // Wake-word listening: keep a rolling pre-buffer so speech during inference is not lost.
         this.preBuffer.push(frame);
         if (this.preBuffer.length > this.cfg.preBufferChunks) {
@@ -290,15 +331,20 @@ export class Satellite {
                 this.playbackProc = null;
             }
             this.wakeword.reset();
+            this.followUpCount = 0; // a fresh wake word starts a new conversation
             await this.startRecording();
         }
     }
 
-    private async startRecording(): Promise<void> {
+    private async startRecording(beep = true): Promise<void> {
         this.setStatus('listening');
-        this.ttsDiscard = true; // drop any late TTS from a previous turn
-        await playPcm(this.plingPcm, AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.log).done;
-        this.ttsDiscard = false;
+        this.listenAfterPlayback = false;
+        if (beep) {
+            this.ttsDiscard = true; // drop any late TTS from a previous turn
+            await playPcm(this.scaled(this.plingPcm), AUDIO_SAMPLE_RATE, this.backend, this.cfg.speakerDevice, this.log)
+                .done;
+            this.ttsDiscard = false;
+        }
         this.ttsChunks = [];
 
         // Drop everything captured up to now (the beep echo + any inference backlog) so recording runs
@@ -321,6 +367,7 @@ export class Satellite {
     private endRecording(): void {
         this.recording = false;
         this.silence = null;
+        this.awaitingReply = true;
         this.sendControl({ type: 'audio_end', device: this.cfg.device });
         const maxFrames = Math.round(this.cfg.maxRecordMs / FRAME_MS);
         const reason = this.recFrames >= maxFrames ? 'max length' : 'silence';
@@ -349,7 +396,15 @@ export class Satellite {
         if (type !== TYPE_CONTROL) {
             return;
         }
-        let msg: { type?: string; ok?: boolean; state?: SatelliteState; sample_rate?: number };
+        let msg: {
+            type?: string;
+            ok?: boolean;
+            state?: SatelliteState;
+            sample_rate?: number;
+            listen?: boolean;
+            level?: number;
+            delta?: number;
+        };
         try {
             msg = JSON.parse(payload.toString('utf8'));
         } catch {
@@ -371,9 +426,29 @@ export class Satellite {
                     this.setStatus(msg.state);
                 }
                 break;
-            case 'tts_end':
-                void this.playTts(msg.sample_rate || AUDIO_SAMPLE_RATE);
+            case 'tts_end': {
+                const isReply = this.awaitingReply;
+                this.awaitingReply = false;
+                if (msg.listen) {
+                    this.listenAfterPlayback = true;
+                }
+                void this.playTts(msg.sample_rate || AUDIO_SAMPLE_RATE, isReply);
                 break;
+            }
+            case 'listen':
+                // Sent right after an announcement that asks something: its audio is (about to be) playing,
+                // so the mic opens when it is over — otherwise the question itself would be recorded.
+                if (this.playbackProc || this.ttsChunks.length) {
+                    this.listenAfterPlayback = true;
+                } else {
+                    this.openFollowUp(true);
+                }
+                break;
+            case 'volume': {
+                const level = typeof msg.level === 'number' ? msg.level : this.volume + (Number(msg.delta) || 0);
+                void this.setVolume(level);
+                break;
+            }
             case 'heartbeat_ack':
                 this.awaitingHeartbeatAck = false;
                 this.heartbeatMisses = 0;
@@ -381,20 +456,100 @@ export class Satellite {
         }
     }
 
-    private async playTts(sampleRate: number): Promise<void> {
+    private async playTts(sampleRate: number, isReply: boolean): Promise<void> {
         const pcm = Buffer.concat(this.ttsChunks);
         this.ttsChunks = [];
         if (!pcm.length) {
+            this.listenAfterPlayback = false;
             return;
         }
         this.log.info(`Playing reply (${(pcm.length / 2 / sampleRate).toFixed(1)} s @ ${sampleRate} Hz).`);
-        const { proc, done } = playPcm(pcm, sampleRate, this.backend, this.cfg.speakerDevice, this.log);
+        const { proc, done } = playPcm(this.scaled(pcm), sampleRate, this.backend, this.cfg.speakerDevice, this.log);
         this.playbackProc = proc; // tracked so the wake word can barge-in
         try {
             await done;
         } finally {
             this.playbackProc = null;
         }
+        // Barge-in started a new recording meanwhile — that one is the conversation now.
+        if (this.recording) {
+            this.listenAfterPlayback = false;
+            return;
+        }
+        const asked = this.listenAfterPlayback;
+        this.listenAfterPlayback = false;
+        // The adapter asked back, or follow-up is on and this was the answer to something we said.
+        if (asked || (this.cfg.followUp && isReply)) {
+            this.openFollowUp(asked);
+        } else {
+            this.followUpCount = 0;
+        }
+    }
+
+    /**
+     * Keep the mic open without a wake word for `followUpWindowMs`. Limited to `maxFollowUps` turns in a
+     * row, so a misunderstanding that keeps asking back cannot hold the mic open forever.
+     */
+    private openFollowUp(asked: boolean): void {
+        if (!this.running || this.recording) {
+            return;
+        }
+        if (this.followUpCount >= this.cfg.maxFollowUps) {
+            this.log.info('Follow-up limit reached — say the wake word to continue.');
+            this.followUpCount = 0;
+            this.setStatus('idle');
+            return;
+        }
+        this.followUpCount++;
+        this.micRemainder = Buffer.alloc(0); // what the mic heard during playback is the reply itself
+        this.preBuffer = [];
+        this.waitingFollowUp = true;
+        this.followUpDeadline = Date.now() + this.cfg.followUpWindowMs;
+        this.setStatus('listening');
+        if (asked) {
+            this.log.info('Mic ON — the assistant asked a question, listening for your answer (no wake word).');
+        } else {
+            this.log.debug('Follow-up window open (mic on, no wake word).');
+        }
+    }
+
+    // ── volume ─────────────────────────────────────────────────────────────
+
+    /**
+     * Set the playback volume (0–100) and report it to the adapter. Called for the adapter's `volume`
+     * command, and by a host whose own volume control changed (`notifyHost: false` — it already knows).
+     */
+    async setVolume(level: number, notifyHost = true): Promise<void> {
+        this.volume = clampVolume(level);
+        this.log.info(`Volume ${this.volume}%.`);
+        if (notifyHost && this.host.onVolume) {
+            try {
+                await this.host.onVolume(this.volume);
+            } catch (e) {
+                this.log.warn(`Applying the volume failed: ${(e as Error).message}`);
+            }
+        }
+        this.reportVolume();
+    }
+
+    private reportVolume(): void {
+        this.sendControl({ type: 'volume', device: this.cfg.device, level: this.volume });
+    }
+
+    /**
+     * The audio to play at the current volume. With a host mixer it stays unchanged; otherwise the samples
+     * are scaled — on a squared curve, because a linear one sounds barely quieter until the very end.
+     */
+    private scaled(pcm: Buffer): Buffer {
+        if (this.host.mixerVolume || this.volume >= 100) {
+            return pcm;
+        }
+        const gain = (this.volume / 100) ** 2;
+        const out = Buffer.alloc(pcm.length - (pcm.length % 2));
+        for (let i = 0; i < out.length; i += 2) {
+            out.writeInt16LE(Math.round(pcm.readInt16LE(i) * gain), i);
+        }
+        return out;
     }
 
     // ── senders / status ───────────────────────────────────────────────────

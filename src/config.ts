@@ -46,6 +46,12 @@ export interface SatelliteConfig {
     /** Max consecutive follow-up turns per wake before requiring the wake word again. */
     maxFollowUps: number;
 
+    /**
+     * Playback volume 0–100 at start. Without a host volume hook (see `SatelliteHost.onVolume`) it scales
+     * the played audio in software; the adapter can change it by voice ("lauter", "Lautstärke 5").
+     */
+    volume: number;
+
     /** Heartbeat / registration. */
     registrationTimeoutMs: number;
     heartbeatIntervalMs: number;
@@ -73,6 +79,7 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
     followUp: false,
     followUpWindowMs: 6000,
     maxFollowUps: 4,
+    volume: 100,
     registrationTimeoutMs: 5000,
     heartbeatIntervalMs: 10000,
 };

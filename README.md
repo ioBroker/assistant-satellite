@@ -66,6 +66,13 @@ sudo assistant-satellite install config.json
 | `wakewordThreshold`              | `0.5`            | detection sensitivity (0–1)                          |
 | `silenceThreshold` / `silenceMs` | `300` / `800`    | end-of-speech (VAD)                                  |
 | `minRecordMs` / `maxRecordMs`    | `800` / `8000`   | recording bounds                                     |
+| `followUp` / `followUpWindowMs`  | `false` / `6000` | keep the mic open after every reply (no wake word)   |
+| `maxFollowUps`                   | `4`              | follow-up turns in a row before the wake word again  |
+| `volume`                         | `100`            | playback volume 0–100 at start (software gain)       |
+
+The adapter can also ask for the mic itself — when its answer is a question — and change the volume by
+voice ("louder", "volume 5"); the satellite reports its level back. Both need ioBroker.assistant with UDP
+`listen`/`volume` support; older adapters simply never send them.
 
 Built-in wake words: `hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`.
 
@@ -143,6 +150,10 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+* (@GermanBluefox) UDP satellite: re-opens the mic without a wake word when the adapter's answer asks back (`tts_end.listen`, `listen`), and optionally after every reply (`followUp`)
+* (@GermanBluefox) UDP satellite: playback volume can be changed by the adapter (`volume` message, absolute or relative) and is reported back; without a host mixer it is applied in software. New config `volume`, new host hooks `onVolume`/`mixerVolume` and `Satellite.setVolume()`
+
 ### 0.1.7 (2026-07-10)
 * (@GermanBluefox) Detect mute state
 

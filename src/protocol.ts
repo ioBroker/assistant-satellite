@@ -21,17 +21,27 @@ export const AUDIO_SAMPLE_RATE = 16000;
 export type SatToServer =
     | { type: 'register'; device: string; room?: string; listen_port?: number }
     | { type: 'heartbeat'; device: string }
-    | { type: 'audio_end'; device: string };
+    | { type: 'audio_end'; device: string }
+    /** The playback volume (0–100) after a `volume` command, after a local change, and once after registering. */
+    | { type: 'volume'; device: string; level: number };
 
 export type SatelliteState = 'idle' | 'listening' | 'processing' | 'speaking';
 
-/** Control messages the satellite receives from the server. */
+/**
+ * Control messages the satellite receives from the server.
+ *
+ * `listen` (and `tts_end.listen`, when the reply itself is the question) asks for the mic to be re-opened
+ * without a wake word once playback is over. `volume` sets the playback volume, absolute (`level`, 0–100)
+ * or relative (`delta`, ±percentage points). All three are additive: an older adapter never sends them.
+ */
 export type ServerToSat =
     | { type: 'registered'; ok: boolean }
     | { type: 'heartbeat_ack' }
     | { type: 'reregister' }
-    | { type: 'tts_end'; sample_rate: number }
-    | { type: 'status'; state: SatelliteState };
+    | { type: 'tts_end'; sample_rate: number; listen?: boolean }
+    | { type: 'status'; state: SatelliteState }
+    | { type: 'listen' }
+    | { type: 'volume'; level?: number; delta?: number };
 
 /** Prefix a control JSON message with the CONTROL type byte. */
 export function encodeControl(msg: SatToServer): Buffer {
