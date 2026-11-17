@@ -150,7 +150,7 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.2.0 (2026-11-17)
 * (@GermanBluefox) UDP satellite: re-opens the mic without a wake word when the adapter's answer asks back (`tts_end.listen`, `listen`), and optionally after every reply (`followUp`)
 * (@GermanBluefox) UDP satellite: playback volume can be changed by the adapter (`volume` message, absolute or relative) and is reported back; without a host mixer it is applied in software. New config `volume`, new host hooks `onVolume`/`mixerVolume` and `Satellite.setVolume()`
 
