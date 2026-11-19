@@ -38,6 +38,11 @@ export interface SatelliteConfig {
 
     /** Barge-in: if the wake word fires while the reply is playing, stop playback and listen again. */
     bargeIn: boolean;
+    /**
+     * Wake-word threshold while the reply plays (local listener), when the mic hears the speaker too.
+     * 0 = the same as `wakewordThreshold`; higher = fewer false interruptions, but harder to interrupt.
+     */
+    bargeInThreshold: number;
 
     /** Follow-up: keep the mic open after a reply so the user can continue without the wake word. */
     followUp: boolean;
@@ -76,6 +81,7 @@ export const DEFAULT_CONFIG: SatelliteConfig = {
     maxRecordMs: 8000,
     preBufferChunks: 5,
     bargeIn: true,
+    bargeInThreshold: 0,
     followUp: false,
     followUpWindowMs: 6000,
     maxFollowUps: 4,

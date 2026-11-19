@@ -68,7 +68,15 @@ sudo assistant-satellite install config.json
 | `minRecordMs` / `maxRecordMs`    | `800` / `8000`   | recording bounds                                     |
 | `followUp` / `followUpWindowMs`  | `false` / `6000` | keep the mic open after every reply (no wake word)   |
 | `maxFollowUps`                   | `4`              | follow-up turns in a row before the wake word again  |
+| `bargeIn`                        | `true`           | the wake word interrupts the reply and listens again |
+| `bargeInThreshold`               | `0`              | wake-word threshold while the reply plays (0 = same) |
 | `volume`                         | `100`            | playback volume 0–100 at start (software gain)       |
+
+**Barge-in:** saying the wake word while the reply plays stops it and starts a new question. In the
+ioBroker transport (`LocalListener`) this also works while the answer is still being fetched: the late
+answer is then dropped. The microphone hears the speaker too, so if a reply interrupts itself, raise
+`bargeInThreshold`. A reply that says the wake word itself (e.g. "ioBroker" with the wake word
+`io_broker`) cannot interrupt itself: barge-in is off while it plays.
 
 The adapter can also ask for the mic itself — when its answer is a question — and change the volume by
 voice ("louder", "volume 5"); the satellite reports its level back. Both need ioBroker.assistant with UDP
@@ -150,6 +158,9 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+* (@GermanBluefox) ioBroker transport (`LocalListener`): barge-in. The wake word interrupts the reply that is playing, or drops the answer that is still being fetched, and starts a new question (`bargeIn`, default on). New config `bargeInThreshold` for the wake word while the reply plays, new host hook `onWakeWord` (e.g. to stop an announcement), and `onUtterance` may return the reply `text`: a reply that says the wake word itself does not interrupt itself
+
 ### 0.2.0 (2026-11-17)
 * (@GermanBluefox) UDP satellite: re-opens the mic without a wake word when the adapter's answer asks back (`tts_end.listen`, `listen`), and optionally after every reply (`followUp`)
 * (@GermanBluefox) UDP satellite: playback volume can be changed by the adapter (`volume` message, absolute or relative) and is reported back; without a host mixer it is applied in software. New config `volume`, new host hooks `onVolume`/`mixerVolume` and `Satellite.setVolume()`

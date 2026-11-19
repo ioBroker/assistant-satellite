@@ -33,7 +33,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node build/cli.js",
-    "test": "echo \"no tests yet\" && exit 0",
+    "test": "npm run build && node --test \"test/**/*.test.js\"",
     "test:package": "echo \"not required\" && exit 0",
     "test:integration": "echo \"no tests yet\" && exit 0",
     "prepublishOnly": "npm run build",

@@ -19,15 +19,68 @@ import type { Logger, SatelliteState } from './index';
 const FRAME_BYTES = 1280 * 2; // 80 ms @ 16 kHz mono 16-bit
 const FRAME_MS = 80;
 
+/** The answer to an utterance, as `LocalListenerHost.onUtterance` returns it */
+export interface LocalReply {
+    /** Reply audio, 16-bit mono PCM */
+    pcm: Buffer;
+    sampleRate: number;
+    /** Keep the mic open for an answer without the wake word (the reply was a question) */
+    listen?: boolean;
+    /** The spoken text, if known */
+    text?: string;
+}
+
+/**
+ * What a wake word sounds like in a written text, e.g. `iobroker` for `io_broker.onnx` and `jarvis` for
+ * `hey_jarvis` — to notice a reply that says the wake word itself
+ *
+ * @param spec the `wakewordModel` config: names or paths of the models
+ */
+export function wakePhrases(spec: string): string[] {
+    return parseWakewords(spec)
+        .map(word =>
+            (word.split(/[/\\]/).pop() || word || 'hey_jarvis')
+                .toLowerCase()
+                .replace(/\.onnx(\.data)?$/, '')
+                .replace(/_v\d+(\.\d+)*$/, '')
+                .replace(/^(hey|hi|ok|okay)_/, '')
+                .replace(/[^\p{L}\p{N}]/gu, ''),
+        )
+        .filter(phrase => phrase.length >= 3);
+}
+
+/**
+ * Whether a reply text contains one of the wake phrases (letters and digits only, so "ioBroker" and
+ * "io Broker" both contain `iobroker`)
+ *
+ * @param text the reply text
+ * @param phrases see {@link wakePhrases}
+ */
+export function saysWakeWord(text: string | undefined, phrases: string[]): boolean {
+    if (!text) {
+        return false;
+    }
+    const letters = text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    return phrases.some(phrase => letters.includes(phrase));
+}
+
 export interface LocalListenerHost {
     log: Logger;
     onStatus?(state: SatelliteState): void;
     /**
      * A complete recorded utterance (16 kHz mono 16-bit PCM). Return the reply audio to play back, or
      * null to stay silent (e.g. nothing recognised). Set `listen: true` to keep the mic open for the
-     * user's answer without a wake word — used when the assistant's reply is a question.
+     * user's answer without a wake word — used when the assistant's reply is a question. `text` (the
+     * spoken answer) lets the listener notice a reply that says the wake word itself.
+     *
+     * With `bargeIn` the wake word can interrupt while this runs: its result is then thrown away.
      */
-    onUtterance(pcm: Buffer, sampleRate: number): Promise<{ pcm: Buffer; sampleRate: number; listen?: boolean } | null>;
+    onUtterance(pcm: Buffer, sampleRate: number): Promise<LocalReply | null>;
+    /**
+     * The wake word was detected (also as barge-in). The host can stop audio of its own here, e.g. an
+     * announcement it is playing, before the listener plays its beep and records.
+     */
+    onWakeWord?(): void;
     /**
      * Microphone capture died and could not be (re)opened — `message` describes it (device + last error).
      * Called on each failed (re)start attempt; the listener keeps retrying with backoff. The adapter can
@@ -52,6 +105,15 @@ export class LocalListener {
     private pumping = false;
     private running = false;
     private playbackProc: ChildProcess | null = null;
+    /** What happens with the last utterance: its answer is awaited or played (null = nothing) */
+    private busy: 'processing' | 'speaking' | null = null;
+    /** Counts the utterances; an answer whose number is not the current one was interrupted */
+    private turn = 0;
+    /** The reply being played says the wake word: it must not interrupt itself */
+    private replySaysWakeWord = false;
+    /** Reset the wake-word model before the next frame (it heard the reply) */
+    private wakeResetPending = false;
+    private wakePhraseList: string[] = [];
     /** Follow-up: after a reply, listen for the user to keep talking without the wake word. */
     private waitingFollowUp = false;
     private followUpDeadline = 0;
@@ -82,6 +144,7 @@ export class LocalListener {
         const modelSets = await Promise.all(words.map(w => ensureModels(this.cfg.modelsDir, w, this.host.log)));
         this.wakeword = new WakeWord(modelSets, this.cfg.wakewordThreshold, this.host.log);
         await this.wakeword.load();
+        this.wakePhraseList = wakePhrases(this.cfg.wakewordModel);
         this.plingPcm = pling();
         this.running = true;
         this.micCandidates = this.buildMicCandidates();
@@ -201,7 +264,7 @@ export class LocalListener {
         if (this.recording) {
             this.recChunks.push(frame);
             if (this.silence!.push(frame)) {
-                await this.endRecording();
+                this.endRecording();
             }
             return;
         }
@@ -220,18 +283,55 @@ export class LocalListener {
             }
             return;
         }
+        // While an answer is awaited or played, only the wake word counts (barge-in) — or nothing at all
+        if (this.busy && !this.cfg.bargeIn) {
+            return;
+        }
+        if (this.wakeResetPending) {
+            // the model heard the reply: start fresh, so its echo cannot complete a detection later
+            this.wakeResetPending = false;
+            this.wakeword.reset();
+        }
         // Wake-word listening with a rolling pre-buffer so speech during inference is not lost.
         this.preBuffer.push(frame);
         if (this.preBuffer.length > this.cfg.preBufferChunks) {
             this.preBuffer.shift();
         }
         const score = await this.wakeword.process(frame);
-        if (this.wakeword.triggered(score)) {
-            this.host.log.info(`Wake word detected (score ${(score as number).toFixed(3)}).`);
-            this.wakeword.reset();
-            this.followUpCount = 0; // a fresh wake word starts a new conversation
-            await this.startRecording();
+        if (score === null || score < this.thresholdNow()) {
+            return;
         }
+        if (this.busy === 'speaking' && this.replySaysWakeWord) {
+            return; // the reply says the wake word itself
+        }
+        const interrupted = this.busy;
+        if (interrupted) {
+            // Barge-in: the answer of the last utterance is not wanted any more
+            this.turn++;
+            this.busy = null;
+            this.replySaysWakeWord = false;
+            this.playbackProc?.kill();
+            this.playbackProc = null;
+            this.host.log.info(
+                interrupted === 'speaking'
+                    ? `Barge-in (score ${score.toFixed(3)}): stopping the reply and listening.`
+                    : `Barge-in (score ${score.toFixed(3)}): dropping the answer that is still coming and listening.`,
+            );
+        } else {
+            this.host.log.info(`Wake word detected (score ${score.toFixed(3)}).`);
+        }
+        this.wakeword.reset();
+        this.followUpCount = 0; // a fresh wake word starts a new conversation
+        this.host.onWakeWord?.();
+        await this.startRecording();
+    }
+
+    /** The wake-word threshold now: while the reply plays, the speaker echo is in the mic too */
+    private thresholdNow(): number {
+        if (this.busy === 'speaking' && this.cfg.bargeInThreshold > 0) {
+            return this.cfg.bargeInThreshold;
+        }
+        return this.cfg.wakewordThreshold;
     }
 
     private async startRecording(beep = true): Promise<void> {
@@ -253,18 +353,43 @@ export class LocalListener {
         this.recording = true;
     }
 
-    private async endRecording(): Promise<void> {
+    private endRecording(): void {
         this.recording = false;
         const pcm = Buffer.concat(this.recChunks);
         this.recChunks = [];
+        this.turn++;
+        this.busy = 'processing';
         this.setStatus('processing');
+        // Not awaited: the microphone keeps being analysed, so the wake word can interrupt (barge-in)
+        void this.answer(pcm, this.turn);
+    }
+
+    /**
+     * Get the answer to an utterance and play it, then open the follow-up window or go back to idle —
+     * unless the wake word interrupted meanwhile: then a newer turn owns the state and this one ends quietly.
+     *
+     * @param pcm the recorded utterance
+     * @param turn number of this utterance
+     */
+    private async answer(pcm: Buffer, turn: number): Promise<void> {
         let spoke = false;
         let assistantWantsMic = false;
         try {
             const reply = await this.host.onUtterance(pcm, AUDIO_SAMPLE_RATE);
+            if (turn !== this.turn || !this.running) {
+                if (this.running) {
+                    this.host.log.debug('Answer of an interrupted utterance dropped.');
+                }
+                return;
+            }
             assistantWantsMic = reply?.listen === true;
-            if (reply && reply.pcm.length && this.running) {
+            if (reply && reply.pcm.length) {
                 spoke = true;
+                this.busy = 'speaking';
+                this.replySaysWakeWord = this.cfg.bargeIn && saysWakeWord(reply.text, this.wakePhraseList);
+                if (this.replySaysWakeWord) {
+                    this.host.log.debug('The reply says the wake word itself: no barge-in while it plays.');
+                }
                 this.setStatus('speaking');
                 const { proc, done } = playPcm(
                     reply.pcm,
@@ -274,39 +399,40 @@ export class LocalListener {
                     this.host.log,
                 );
                 this.playbackProc = proc;
-                try {
-                    await done;
-                } finally {
-                    this.playbackProc = null;
-                }
+                await done;
             }
         } catch (e) {
-            this.host.log.error(`utterance processing failed: ${(e as Error).message}`);
-        } finally {
-            this.micRemainder = Buffer.alloc(0); // discard audio captured while processing/speaking
-            this.preBuffer = [];
-            // Open a follow-up window (mic stays on, no wake word) when the assistant asked us to keep
-            // listening (its reply was a question → `listen`), or generally if follow-up is enabled and we
-            // still have budget — enables "…and the kitchen too" / answering a clarifying question without
-            // repeating the wake word.
-            const wantMic = assistantWantsMic || this.cfg.followUp;
-            if (wantMic && spoke && this.running && this.followUpCount < this.cfg.maxFollowUps) {
-                this.followUpCount++;
-                this.waitingFollowUp = true;
-                this.followUpDeadline = Date.now() + this.cfg.followUpWindowMs;
-                this.setStatus('listening');
-                if (assistantWantsMic) {
-                    this.host.log.info(
-                        'Mic ON — assistant asked a question, listening for your answer (no wake word).',
-                    );
-                } else {
-                    this.host.log.debug('Follow-up window open (mic on, no wake word).');
-                }
-            } else {
-                this.followUpCount = 0;
-                this.waitingFollowUp = false;
-                this.setStatus('idle');
+            if (turn === this.turn) {
+                this.host.log.error(`utterance processing failed: ${(e as Error).message}`);
             }
+        }
+        if (turn !== this.turn || !this.running) {
+            return; // interrupted: the new turn owns the state
+        }
+        this.playbackProc = null;
+        this.busy = null;
+        this.replySaysWakeWord = false;
+        this.preBuffer = [];
+        this.wakeResetPending = true;
+        // Open a follow-up window (mic stays on, no wake word) when the assistant asked us to keep
+        // listening (its reply was a question → `listen`), or generally if follow-up is enabled and we
+        // still have budget — enables "…and the kitchen too" / answering a clarifying question without
+        // repeating the wake word.
+        const wantMic = assistantWantsMic || this.cfg.followUp;
+        if (wantMic && spoke && this.followUpCount < this.cfg.maxFollowUps) {
+            this.followUpCount++;
+            this.waitingFollowUp = true;
+            this.followUpDeadline = Date.now() + this.cfg.followUpWindowMs;
+            this.setStatus('listening');
+            if (assistantWantsMic) {
+                this.host.log.info('Mic ON — assistant asked a question, listening for your answer (no wake word).');
+            } else {
+                this.host.log.debug('Follow-up window open (mic on, no wake word).');
+            }
+        } else {
+            this.followUpCount = 0;
+            this.waitingFollowUp = false;
+            this.setStatus('idle');
         }
     }
 }
