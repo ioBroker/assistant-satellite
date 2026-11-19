@@ -158,7 +158,7 @@ threshold should be validated on the target device.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.3.0 (2026-11-19)
 * (@GermanBluefox) ioBroker transport (`LocalListener`): barge-in. The wake word interrupts the reply that is playing, or drops the answer that is still being fetched, and starts a new question (`bargeIn`, default on). New config `bargeInThreshold` for the wake word while the reply plays, new host hook `onWakeWord` (e.g. to stop an announcement), and `onUtterance` may return the reply `text`: a reply that says the wake word itself does not interrupt itself
 
 ### 0.2.0 (2026-11-17)
